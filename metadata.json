@@ -1,0 +1,6 @@
+{
+  "name": "Wafer Chamber Lithography Visualizer",
+  "description": "Semiconductor equipment simulation and diagnostic platform for gamma tube rotation, tri-port lux projection, star pattern matrices, and lens alignment in chip manufacturing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

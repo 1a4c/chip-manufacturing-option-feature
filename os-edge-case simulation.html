@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DSL 點雲嶺迴歸與蝕刻 OS 調度模擬器</title>
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #0b0e14;
+            --panel-bg: rgba(22, 27, 34, 0.85);
+            --border-color: #21262d;
+            --accent-cyan: #38bdf8;
+            --accent-amber: #f59e0b;
+            --accent-green: #34d399;
+            --accent-purple: #a855f7;
+            --accent-red: #f43f5e;
+            --text-main: #e2e8f0;
+            --text-sub: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: monospace, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .title {
+            font-size: 1rem;
+            font-weight: bold;
+            color: var(--accent-cyan);
+        }
+
+        .status-tag {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 400px 1fr 360px;
+            grid-template-rows: 1fr 240px;
+            gap: 10px;
+            padding: 10px;
+            flex: 1;
+            height: calc(100vh - 50px);
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            backdrop-filter: blur(8px);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: var(--text-sub);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .dsl-box {
+            background: #000;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 0.75rem;
+            line-height: 1.4;
+            color: #f8fafc;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow-x: auto;
+        }
+
+        .kw-reg  { color: var(--accent-purple); font-weight: bold; }
+        .kw-cond { color: var(--accent-cyan); }
+        .kw-func { color: var(--accent-amber); }
+        .kw-sys  { color: var(--accent-green); }
+
+        /* 3D Viewport */
+        #viewport-3d {
+            grid-column: 2 / 3;
+            grid-row: 1 / 2;
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        #three-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .canvas-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            pointer-events: none;
+        }
+
+        /* Console Output */
+        .console-log {
+            background: #04060a;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 0.72rem;
+            color: var(--accent-green);
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            margin-bottom: 4px;
+        }
+        .log-warn { color: var(--accent-amber); }
+        .log-info { color: var(--accent-cyan); }
+
+        /* Metrics Display */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .metric-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+        }
+
+        .metric-title {
+            font-size: 0.7rem;
+            color: var(--text-sub);
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--accent-cyan);
+            margin-top: 2px;
+        }
+
+        .btn {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid var(--accent-cyan);
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--accent-cyan);
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="title-container">
+            <div class="title">DSL Pipeline Engine :: Hidge_regressed Runtime</div>
+            <div class="status-tag">Point Cloud Determined</div>
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-sub);">
+            OS Scheduler Status: Bound to Complement Profit Gain
+        </div>
+    </header>
+
+    <div class="dashboard-grid">
+
+        <!-- Left Panel: DSL AST & Execution Code -->
+        <div class="panel" style="grid-column: 1 / 2; grid-row: 1 / 3;">
+            <div class="panel-header">DSL Target Instruction Source</div>
+            
+            <div class="dsl-box">
+<span class="kw-reg">Hidge_regressed</span>[
+  <span class="kw-cond">cloud_is-determined</span>(
+    <span class="kw-func">probe-verified-nodes-spanned_selected</span>{
+      <span class="kw-func">glanced_slented_brush</span>.
+      <span class="kw-func">clock-points-leveling-altered</span>[
+        <span class="kw-sys">pin-function</span>.
+        <span class="kw-sys">etched_os</span>.
+        <span class="kw-sys">app_usage_scheduler</span>.
+        <span class="kw-sys">bound_with</span>(
+          <span class="kw-func">angled_pole</span>.
+          <span class="kw-func">profit_gain</span>().
+          <span class="kw-func">complement</span>()
+        )
+      ]
+    }
+  )
+]</div>
+
+            <div class="panel-header" style="margin-top: 8px;">AST Functional Mapping</div>
+            <div style="font-size: 0.75rem; color: var(--text-sub); line-height: 1.5; overflow-y: auto;">
+                <p>• <b>Hidge_regressed:</b> Ridge regression boundary fitting over 3D point cloud.</p>
+                <p>• <b>Probe Verified Nodes:</b> Spanned nodes verified by physical probe sensors.</p>
+                <p>• <b>Glanced Slanted Brush:</b> Leveling clock points via slanted sweep scan.</p>
+                <p>• <b>Etched OS Scheduler:</b> Hard-coded OS scheduler dynamically bound to complement profit gain bounds.</p>
+            </div>
+
+            <div class="panel-header" style="margin-top: auto;">Interactive Operations</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn" onclick="executeRidgeFit()">Execute Ridge Regressed</button>
+                <button class="btn" onclick="triggerOSBound()">Re-bind OS Scheduler</button>
+            </div>
+        </div>
+
+        <!-- Middle Panel: 3D Point Cloud & Probe Visualizer -->
+        <div id="viewport-3d">
+            <div class="canvas-overlay">
+                <b>3D Ridge Surface & Pin Probe Nodes</b><br>
+                Mode: Glanced Slanted Brush Scanning
+            </div>
+            <div id="three-canvas"></div>
+        </div>
+
+        <!-- Right Panel Top: System Metrics & Profit Gain Chart -->
+        <div class="panel" style="grid-column: 3 / 4; grid-row: 1 / 2;">
+            <div class="panel-header">Telemetry Metrics</div>
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-title">Ridge Penalty (λ)</div>
+                    <div class="metric-value">0.042</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Leveling Error</div>
+                    <div class="metric-value" id="val-err">0.0018 mm</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">OS Usage Bound</div>
+                    <div class="metric-value" style="color: var(--accent-amber);" id="val-bound">64.2%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Gain Complement</div>
+                    <div class="metric-value" style="color: var(--accent-green);">0.358</div>
+                </div>
+            </div>
+
+            <div class="panel-header" style="margin-top: 6px;">Profit Gain vs. Complement Bound</div>
+            <canvas id="chart-gain" height="110"></canvas>
+        </div>
+
+        <!-- Middle Bottom Panel: Console Log Pipeline -->
+        <div class="panel" style="grid-column: 2 / 3; grid-row: 2 / 3;">
+            <div class="panel-header">Etched OS Log & Pipeline Output</div>
+            <div class="console-log" id="console-output">
+                <!-- Dynamic Logs -->
+            </div>
+        </div>
+
+        <!-- Right Bottom Panel: Pin Function Scheduler Status -->
+        <div class="panel" style="grid-column: 3 / 4; grid-row: 2 / 3;">
+            <div class="panel-header">Pin Function Scheduler</div>
+            <div style="font-size: 0.75rem; color: var(--text-sub); line-height: 1.6;">
+                <p><b>Scheduler State:</b> BOUND_COMPLEMENT</p>
+                <p><b>Etched OS Core:</b> Active (Interrupt Vector 0x4F)</p>
+                <p><b>Clock Points Leveling:</b> Altered (Slanted Offset Mode)</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        /* ==========================================
+           1. Three.js Point Cloud & Surface Fitting
+           ========================================== */
+        const container = document.getElementById('three-canvas');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0b0e14);
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(15, 12, 20);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0x38bdf8, 1);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // Grid
+        const grid = new THREE.GridHelper(20, 20, 0x38bdf8, 0x21262d);
+        scene.add(grid);
+
+        // 3D Point Cloud Generation (cloud_is-determined)
+        const particleCount = 600;
+        const cloudGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+
+        for(let i = 0; i < particleCount; i++) {
+            const x = (Math.random() - 0.5) * 12;
+            const z = (Math.random() - 0.5) * 12;
+            // Ridge surface function with noise
+            const y = Math.sin(x * 0.5) * Math.cos(z * 0.5) * 1.5 + (Math.random() - 0.5) * 0.3;
+            
+            positions[i*3] = x;
+            positions[i*3+1] = y + 1;
+            positions[i*3+2] = z;
+        }
+
+        cloudGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const cloudMat = new THREE.PointsMaterial({ color: 0x38bdf8, size: 0.15 });
+        const pointCloud = new THREE.Points(cloudGeo, cloudMat);
+        scene.add(pointCloud);
+
+        // Regressed Ridge Surface Mesh (Hidge_regressed)
+        const surfGeo = new THREE.PlaneGeometry(12, 12, 24, 24);
+        const surfPos = surfGeo.attributes.position;
+        for(let i = 0; i < surfPos.count; i++) {
+            const x = surfPos.getX(i);
+            const y = surfPos.getY(i);
+            surfPos.setZ(i, Math.sin(x * 0.5) * Math.cos(y * 0.5) * 1.5);
+        }
+        surfGeo.computeVertexNormals();
+        const surfMat = new THREE.MeshStandardMaterial({ 
+            color: 0xa855f7, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.4 
+        });
+        const ridgeSurface = new THREE.Mesh(surfGeo, surfMat);
+        ridgeSurface.rotation.x = -Math.PI / 2;
+        ridgeSurface.position.y = 1;
+        scene.add(ridgeSurface);
+
+        // Probe Pins (probe-verified-nodes)
+        const pinGroup = new THREE.Group();
+        const pinGeo = new THREE.CylinderGeometry(0.08, 0.08, 3);
+        const pinMat = new THREE.MeshStandardMaterial({ color: 0x34d399 });
+
+        for(let i = -4; i <= 4; i += 4) {
+            for(let j = -4; j <= 4; j += 4) {
+                const pin = new THREE.Mesh(pinGeo, pinMat);
+                pin.position.set(i, 2.5, j);
+                pinGroup.add(pin);
+            }
+        }
+        scene.add(pinGroup);
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            ridgeSurface.rotation.z += 0.002;
+            pointCloud.rotation.y += 0.002;
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        /* ==========================================
+           2. Console Logging System
+           ========================================== */
+        const consoleBox = document.getElementById('console-output');
+
+        function printLog(msg, type = 'normal') {
+            const time = new Date().toISOString().slice(11, 19);
+            const div = document.createElement('div');
+            div.className = `log-item ${type === 'warn' ? 'log-warn' : type === 'info' ? 'log-info' : ''}`;
+            div.innerText = `[${time}] ${msg}`;
+            consoleBox.appendChild(div);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+
+        // Initial Logs
+        printLog('Pipeline initiated: Hidge_regressed AST loaded.');
+        printLog('State Verified: [cloud_is-determined] = TRUE', 'info');
+        printLog('Glanced Slanted Brush aligned to probe nodes.', 'info');
+        printLog('Etched OS app_usage_scheduler bound with complement(angled_pole.profit_gain()).', 'warn');
+
+        /* ==========================================
+           3. Chart.js Profit Gain & Complement
+           ========================================== */
+        const ctxChart = document.getElementById('chart-gain').getContext('2d');
+        const gainChart = new Chart(ctxChart, {
+            type: 'line',
+            data: {
+                labels: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6'],
+                datasets: [{
+                    label: 'Profit Gain',
+                    data: [0.8, 0.75, 0.68, 0.62, 0.65, 0.642],
+                    borderColor: '#f59e0b',
+                    tension: 0.3,
+                    borderWidth: 2
+                }, {
+                    label: 'Complement Bound',
+                    data: [0.2, 0.25, 0.32, 0.38, 0.35, 0.358],
+                    borderColor: '#34d399',
+                    borderDash: [4, 4],
+                    tension: 0.3,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                    y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                }
+            }
+        });
+
+        /* ==========================================
+           4. Interactive Functions
+           ========================================== */
+        function executeRidgeFit() {
+            printLog('Re-evaluating Hidge_regressed L2 regularization penalty...', 'info');
+            document.getElementById('val-err').innerText = '0.0009 mm';
+            setTimeout(() => {
+                printLog('Ridge Surface re-fitted successfully. Leveling error minimized.');
+            }, 500);
+        }
+
+        function triggerOSBound() {
+            printLog('Re-binding app_usage_scheduler to Angled Pole Complement Gain...', 'warn');
+            const newBound = (55 + Math.random() * 15).toFixed(1);
+            document.getElementById('val-bound').innerText = `${newBound}%`;
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+    </script>
+</body>
+</html>

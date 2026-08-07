@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analog IC EDA Studio - Mixed-Signal Simulation Workbench</title>
+    <style>
+        :root {
+            --bg-dark: #0f111a;
+            --panel-bg: #181b28;
+            --panel-border: #282d42;
+            --accent-cyan: #00f0ff;
+            --accent-green: #00ff66;
+            --accent-yellow: #ffcc00;
+            --accent-red: #ff3366;
+            --accent-purple: #a855f7;
+            --text-main: #e2e8f0;
+            --text-muted: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Top Bar */
+        header {
+            background: #090a10;
+            border-bottom: 1px solid var(--panel-border);
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .logo {
+            color: var(--accent-cyan);
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-tag {
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Main Workspace Grid */
+        .workspace {
+            display: grid;
+            grid-template-columns: 320px 1fr 340px;
+            grid-template-rows: 1fr 240px;
+            gap: 8px;
+            padding: 8px;
+            flex: 1;
+            height: calc(100vh - 40px);
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .panel-header {
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--panel-border);
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .panel-header span.highlight {
+            color: var(--accent-cyan);
+        }
+
+        .panel-body {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            padding: 8px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Controls Panel */
+        .control-group {
+            margin-bottom: 12px;
+            background: rgba(255,255,255,0.02);
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-cyan);
+        }
+
+        /* Six-Optic Channel Buttons */
+        .optic-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .optic-btn {
+            background: #111420;
+            border: 1px solid var(--panel-border);
+            color: var(--text-muted);
+            padding: 8px 4px;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .optic-btn.active {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(0, 240, 255, 0.1);
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+        }
+
+        /* Scope overlay stats */
+        .stat-overlay {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--panel-border);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 2px;
+        }
+
+        .stat-val {
+            color: var(--accent-green);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="20" rx="4"/>
+                <path d="M6 12h4l2-6 3 12 2-6h3"/>
+            </svg>
+            ANALOG EDA STUDIO v4.8 :: T-Stamped Node Engine
+        </div>
+        <div>
+            <span>SYSTEM CLOCK: <strong style="color:var(--accent-green)" id="sys-clock">2.40 GHz</strong></span> | 
+            <span class="status-tag">LOCKED</span>
+        </div>
+    </header>
+
+    <div class="workspace">
+
+        <!-- Panel 1: IC Layout & Current Mirror Signal Flow -->
+        <div class="panel" style="grid-column: 1 / 2; grid-row: 1 / 2;">
+            <div class="panel-header">
+                <span>Silicon Layout & Current Mirror</span>
+                <span class="highlight">MOSFET CELL</span>
+            </div>
+            <div class="panel-body">
+                <canvas id="layoutCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Panel 2: Oscilloscope (ADC / DAC Waveforms) -->
+        <div class="panel" style="grid-column: 2 / 3; grid-row: 1 / 2;">
+            <div class="panel-header">
+                <span>Mixed-Signal Oscilloscope</span>
+                <span class="highlight">ADC (Quantized) vs DAC (Reconstructed)</span>
+            </div>
+            <div class="panel-body">
+                <canvas id="scopeCanvas"></canvas>
+                <div class="stat-overlay">
+                    <div class="stat-row"><span>Sampling Rate:</span> <span class="stat-val">100 MS/s</span></div>
+                    <div class="stat-row"><span>Resolution:</span> <span class="stat-val">4-Bit SAR</span></div>
+                    <div class="stat-row"><span>S&H Clock:</span> <span class="stat-val" id="sh-freq">2.0 kHz</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 3: Optics & Parameter Panel -->
+        <div class="panel" style="grid-column: 3 / 4; grid-row: 1 / 3;">
+            <div class="panel-header">
+                <span>Six-Optic Sensor Matrix</span>
+                <span class="highlight">CH SELECT</span>
+            </div>
+            <div class="panel-body" style="overflow-y: auto;">
+                <div class="control-group">
+                    <label>ACTIVE OPTIC NODE</label>
+                    <div class="optic-grid">
+                        <button class="optic-btn active" onclick="setChannel(0)">CH-1 λ1</button>
+                        <button class="optic-btn" onclick="setChannel(1)">CH-2 λ2</button>
+                        <button class="optic-btn" onclick="setChannel(2)">CH-3 λ3</button>
+                        <button class="optic-btn" onclick="setChannel(3)">CH-4 IR</button>
+                        <button class="optic-btn" onclick="setChannel(4)">CH-5 UV</button>
+                        <button class="optic-btn" onclick="setChannel(5)">CH-6 REF</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>MOSFET I_REF (Bias Current): <span id="val-iref" style="color:var(--accent-cyan)">50 µA</span></label>
+                    <input type="range" id="slider-iref" min="10" max="100" value="50" oninput="updateParams()">
+                </div>
+
+                <div class="control-group">
+                    <label>Sample & Hold Clock Freq: <span id="val-sh" style="color:var(--accent-cyan)">2.0 kHz</span></label>
+                    <input type="range" id="slider-sh" min="0.5" max="5.0" step="0.1" value="2.0" oninput="updateParams()">
+                </div>
+
+                <div class="control-group">
+                    <label>OTA Bias Current (I_bias): <span id="val-ota" style="color:var(--accent-cyan)">120 µA</span></label>
+                    <input type="range" id="slider-ota" min="20" max="200" value="120" oninput="updateParams()">
+                </div>
+
+                <div class="control-group" style="margin-top: 15px;">
+                    <label style="color:var(--accent-yellow)">PROBE TELEMETRY</label>
+                    <div style="font-size: 11px; line-height: 1.6; color:#a0aec0; margin-top: 4px;">
+                        • Node-A Vgs: <span id="telemetry-vgs" style="color:#fff">0.72 V</span><br>
+                        • OTA Gm: <span id="telemetry-gm" style="color:#fff">1.45 mS</span><br>
+                        • Optic Gain: <span id="telemetry-opt" style="color:#fff">1.0x</span><br>
+                        • Status: <span style="color:var(--accent-green)">Regulated / Locked</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 4: RC Charge/Hold Simulation -->
+        <div class="panel" style="grid-column: 1 / 2; grid-row: 2 / 3;">
+            <div class="panel-header">
+                <span>S&H RC Charge & Hold Dynamics</span>
+            </div>
+            <div class="panel-body">
+                <canvas id="rcCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Panel 5: OTA Gain Frequency Response (Bode Plot) -->
+        <div class="panel" style="grid-column: 2 / 3; grid-row: 2 / 3;">
+            <div class="panel-header">
+                <span>OTA Frequency Response (Bode Simulation)</span>
+                <span class="highlight">Gain & Phase</span>
+            </div>
+            <div class="panel-body">
+                <canvas id="otaCanvas"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Global Simulation State
+        const state = {
+            activeOptic: 0,
+            iRef: 50,       // uA
+            shFreq: 2.0,    // kHz
+            otaBias: 120,   // uA
+            time: 0,
+            opticGains: [1.0, 1.4, 0.7, 2.0, 1.2, 0.9],
+            opticFreqs: [1.0, 1.5, 0.8, 2.5, 1.8, 0.5]
+        };
+
+        function setChannel(ch) {
+            state.activeOptic = ch;
+            document.querySelectorAll('.optic-btn').forEach((btn, idx) => {
+                btn.classList.toggle('active', idx === ch);
+            });
+            updateParams();
+        }
+
+        function updateParams() {
+            state.iRef = parseFloat(document.getElementById('slider-iref').value);
+            state.shFreq = parseFloat(document.getElementById('slider-sh').value);
+            state.otaBias = parseFloat(document.getElementById('slider-ota').value);
+
+            document.getElementById('val-iref').innerText = state.iRef + ' µA';
+            document.getElementById('val-sh').innerText = state.shFreq.toFixed(1) + ' kHz';
+            document.getElementById('val-ota').innerText = state.otaBias + ' µA';
+            document.getElementById('sh-freq').innerText = state.shFreq.toFixed(1) + ' kHz';
+
+            // Telemetry calculations
+            const vgs = (0.5 + (state.iRef / 200)).toFixed(2);
+            const gm = (Math.sqrt(state.otaBias) * 0.132).toFixed(2);
+            document.getElementById('telemetry-vgs').innerText = vgs + ' V';
+            document.getElementById('telemetry-gm').innerText = gm + ' mS';
+            document.getElementById('telemetry-opt').innerText = state.opticGains[state.activeOptic] + 'x';
+        }
+
+        // --- Canvas Setup Utility ---
+        function initCanvas(id) {
+            const canvas = document.getElementById(id);
+            const ctx = canvas.getContext('2d');
+            function resize() {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+            return { canvas, ctx };
+        }
+
+        const layout = initCanvas('layoutCanvas');
+        const scope = initCanvas('scopeCanvas');
+        const rc = initCanvas('rcCanvas');
+        const ota = initCanvas('otaCanvas');
+
+        // --- 1. IC Layout & Current Mirror Signal Flow Animation ---
+        function drawLayout() {
+            const { canvas, ctx } = layout;
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            // Silicon Substrate
+            ctx.fillStyle = '#121622';
+            ctx.fillRect(0, 0, w, h);
+
+            // Draw Grid Lines (Substrate pattern)
+            ctx.strokeStyle = '#1d2235';
+            ctx.lineWidth = 1;
+            const step = 20;
+            for(let x = 0; x < w; x += step) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            for(let y = 0; y < h; y += step) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            }
+
+            // Draw MOSFET Diffusion Areas (N-Well / Active region)
+            const m1X = w * 0.25, m2X = w * 0.65, mY = h * 0.35, mWidth = 70, mHeight = 90;
+
+            // M1 Diffusion
+            ctx.fillStyle = '#1e3a5f';
+            ctx.fillRect(m1X - 10, mY - 10, mWidth + 20, mHeight + 20);
+            ctx.strokeStyle = '#00f0ff';
+            ctx.strokeRect(m1X - 10, mY - 10, mWidth + 20, mHeight + 20);
+
+            // M2 Diffusion
+            ctx.fillStyle = '#1e3a5f';
+            ctx.fillRect(m2X - 10, mY - 10, mWidth + 20, mHeight + 20);
+            ctx.strokeStyle = '#00f0ff';
+            ctx.strokeRect(m2X - 10, mY - 10, mWidth + 20, mHeight + 20);
+
+            // Polysilicon Gates (Red/Pink)
+            ctx.fillStyle = '#e11d48';
+            ctx.fillRect(m1X + 20, mY - 25, 20, mHeight + 50);
+            ctx.fillRect(m2X + 20, mY - 25, 20, mHeight + 50);
+
+            // Metal 1 Routing (Gate Connection & Mirror Trace)
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            // Connect Gate 1 to Gate 2
+            ctx.moveTo(m1X + 30, mY - 15);
+            ctx.lineTo(m2X + 30, mY - 15);
+            // Diode connection (M1 Drain to Gate)
+            ctx.moveTo(m1X + 5, mY + 20);
+            ctx.lineTo(m1X + 30, mY + 20);
+            ctx.lineTo(m1X + 30, mY - 15);
+            ctx.stroke();
+
+            // Labels
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = '10px monospace';
+            ctx.fillText("M1 (Diode-Connected)", m1X - 5, mY + mHeight + 25);
+            ctx.fillText("M2 (Mirror Out)", m2X, mY + mHeight + 25);
+
+            // Animated Current Flow Particles
+            const speed = state.iRef / 20;
+            const pTime = (state.time * speed) % 100;
+            ctx.fillStyle = '#00ff66';
+            for (let i = 0; i < 5; i++) {
+                let offset = (pTime + i * 20) % 100;
+                // M1 Drain Current Flow
+                let py1 = mY - 30 + (offset / 100) * (mHeight + 30);
+                ctx.beginPath(); ctx.arc(m1X + 5, py1, 3, 0, Math.PI * 2); ctx.fill();
+
+                // M2 Mirrored Current Flow
+                let py2 = mY - 30 + (offset / 100) * (mHeight + 30);
+                ctx.beginPath(); ctx.arc(m2X + 55, py2, 3, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        // --- 2. Oscilloscope (ADC / DAC / S&H Signals) ---
+        function drawScope() {
+            const { canvas, ctx } = scope;
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            // Scope Background
+            ctx.fillStyle = '#05070a';
+            ctx.fillRect(0, 0, w, h);
+
+            // Grid Lines
+            ctx.strokeStyle = '#151c28';
+            ctx.lineWidth = 1;
+            for(let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+            for(let y = 0; y < h; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+            const optFreq = state.opticFreqs[state.activeOptic];
+            const optGain = state.opticGains[state.activeOptic];
+
+            // Analog Input Waveform (Sinusoidal from Optic channel)
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let x = 0; x < w; x++) {
+                let t = state.time * 0.05 + (x * 0.01) * optFreq;
+                let y = h / 2 + Math.sin(t) * 50 * (optGain * 0.8);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Quantized S&H / DAC Reconstructed Waveform
+            ctx.strokeStyle = '#00ff66';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const sampleInterval = 30 / state.shFreq;
+            let lastY = h / 2;
+
+            for (let x = 0; x < w; x++) {
+                if (Math.floor(x / sampleInterval) !== Math.floor((x - 1) / sampleInterval)) {
+                    let sampleT = state.time * 0.05 + (Math.floor(x / sampleInterval) * sampleInterval * 0.01) * optFreq;
+                    let rawY = h / 2 + Math.sin(sampleT) * 50 * (optGain * 0.8);
+                    
+                    // 4-Bit ADC Quantization (16 levels)
+                    let levels = 16;
+                    let levelHeight = h / levels;
+                    lastY = Math.round(rawY / levelHeight) * levelHeight;
+                }
+                if (x === 0) ctx.moveTo(x, lastY); else ctx.lineTo(x, lastY);
+            }
+            ctx.stroke();
+        }
+
+        // --- 3. RC Charge & Hold Dynamics ---
+        function drawRC() {
+            const { canvas, ctx } = rc;
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            ctx.fillStyle = '#0d1017';
+            ctx.fillRect(0, 0, w, h);
+
+            // Clock pulse & RC exponential curve
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const period = 80 / state.shFreq;
+            for (let x = 0; x < w; x++) {
+                let phase = x % period;
+                let isCharge = phase < period / 2;
+                let y;
+
+                if (isCharge) {
+                    // Exponential Charging: V(t) = V0 * (1 - e^(-t/tau))
+                    let t = phase / (period / 2);
+                    y = h - 20 - (1 - Math.exp(-t * 4)) * (h - 50);
+                } else {
+                    // Hold Phase
+                    y = h - 20 - (1 - Math.exp(-4)) * (h - 50);
+                }
+
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px monospace';
+            ctx.fillText("Capacitor Voltage (Vc Exponential Charge/Hold)", 10, 15);
+        }
+
+        // --- 4. OTA Bode Plot Simulation ---
+        function drawOTA() {
+            const { canvas, ctx } = ota;
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            ctx.fillStyle = '#0d1017';
+            ctx.fillRect(0, 0, w, h);
+
+            // Base gain scales with OTA Bias
+            const dcGain = 40 + 20 * Math.log10(state.otaBias / 50); // dB
+            const poleFreq = w * 0.35;
+
+            // Magnitude Curve (Yellow)
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let x = 0; x < w; x++) {
+                let gain = dcGain;
+                if (x > poleFreq) {
+                    gain -= (Math.log2(x / poleFreq)) * 12; // -20dB/dec roll-off
+                }
+                let y = h - 20 - (gain / 80) * (h - 40);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Phase Curve (Red Dashed)
+            ctx.strokeStyle = '#ff3366';
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let x = 0; x < w; x++) {
+                let phase = 0; // degrees
+                let ratio = x / poleFreq;
+                phase = -Math.atan(ratio) * (180 / Math.PI);
+                let y = h / 2 - (phase / 90) * (h / 3);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset dash
+
+            // Axis labels
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px monospace';
+            ctx.fillText(`DC Gain: ${dcGain.toFixed(1)} dB`, 10, 15);
+            ctx.fillText(`-3dB Pole`, poleFreq - 20, h - 5);
+        }
+
+        // --- Main Simulation Loop ---
+        function animate() {
+            state.time += 1;
+
+            drawLayout();
+            drawScope();
+            drawRC();
+            drawOTA();
+
+            requestAnimationFrame(animate);
+        }
+
+        // Initialize Parameters & Start
+        updateParams();
+        animate();
+    </script>
+</body>
+</html>

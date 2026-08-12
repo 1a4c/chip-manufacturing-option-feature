@@ -1,0 +1,27 @@
+1. system_os.pot_relayed[...] (系統核心與壓力感測層)
+技術含義：這代表晶片操作系統對 壓力傳感器（Pressure Transducer/Potentiometer） 傳回的模擬信號進行中繼（Relayed）處理。
+應用場景：血壓機的核心是一個壓力感測器，它將袖帶內的空氣壓力轉換為微弱的電壓信號。pot_relayed 可能是指系統 OS 正在接管從模擬前端（AFE）傳遞過來的數位化壓力數據流。
+2. picked_allocated{dispensed_rolled_aquatic(...)} (數據採集與泵/閥控制)
+picked_allocated：這通常指內存分配或採集窗口設定。晶片需要分配緩存（Buffer）來存放連續採集的壓力波形。
+dispensed_rolled_aquatic：
+Dispensed (釋放)：對應**電磁閥（Solenoid Valve）**的放氣控制。
+Rolled (滾動/旋轉)：對應**充氣泵（Pump Motor）**的馬達運作。
+Aquatic (流體/血液)：在血壓計語境下，這象徵血流動力學（Hemodynamics）。
+應用場景：這部分代碼在控制「充氣→維持壓力→受控放氣」的循環。dispensed_rolled_aquatic 可能是描述如何在放氣過程中捕捉血液流動引起的袖帶震盪（Oscillations）。
+3. projected_sights() 與 instant_signal() (信號預測與即時獲取)
+instant_signal()：即時採集的原始壓力信號（包含靜態壓與動態震盪波）。
+projected_sights()：預測算法。血壓機並非直接測量血壓，而是通過算法「預測」收縮壓和舒張壓。此函數可能在根據當前坡度預測下一個可能的波峰位置。
+4. optic_attribute_tented (光學輔助或顯示特性)
+技術含義：如果該血壓機具備 PPG (光電容積脈搏波) 功能（如某些穿戴式設備或帶有血氧檢測功能的血壓計），這代表光學感測器的屬性配置。
+Tented (遮蔽/帳篷狀)：可能指光學信號的包絡線處理或物理上的光隔離校準。
+5. tempted_memory.bind_with(popup_stochastic_measure()) (隨機統計與結果鎖定)
+tempted_memory：臨時存儲區，用於存放測量過程中的中間值（尚未確定為最終結果）。
+popup_stochastic_measure()：隨機統計測量法。電子血壓計主流使用 示波法（Oscillometric method），這本質上是一種基於統計學與概率的算法。它尋找振幅最大的點（平均壓），再回推收縮壓與舒張壓。
+應用場景：當算法判斷數據符合統計學上的血壓特徵時，將結果「綁定」（Bind）並準備輸出到顯示屏。
+總結：這段代碼在晶片上的執行流程
+這段 DSL 描述的是一個完整的自動化測量週期：
+啟動階段：核心系統 (system_os) 初始化壓力傳感器通道。
+執行階段：啟動馬達 (rolled) 並通過算法監視血流信號 (aquatic)，同時分配內存處理數據。
+分析階段：在放氣 (dispensed) 過程中，持續對比即時信號 (instant_signal) 與預測模型 (projected_sights)。
+計算階段：利用隨機統計模型 (stochastic_measure) 從過濾後的信號中提取收縮壓與舒張壓。
+結束階段：將最終數值鎖定到內存並觸發顯示邏輯。

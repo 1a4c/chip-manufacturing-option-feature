@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能水箱電源管理與 FOC 馬達控制模擬器 (Smart Tank Power HAL Simulator)</title>
+    <style>
+        :root {
+            --bg-color: #0a0e17;
+            --panel-bg: #111827;
+            --border-color: #1f2937;
+            --cyan: #06b6d4;
+            --blue: #3b82f6;
+            --green: #10b981;
+            --amber: #f59e0b;
+            --red: #ef4444;
+            --purple: #8b5cf6;
+            --text-color: #e5e7eb;
+            --text-dim: #9ca3af;
+            --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+            color: var(--cyan);
+            margin-bottom: 4px;
+        }
+
+        .dsl-banner {
+            background: #030712;
+            border: 1px solid var(--cyan);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            color: #67e8f9;
+            line-height: 1.4;
+            word-break: break-all;
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.15);
+        }
+
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        @media (max-width: 900px) {
+            .layout-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .panel-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+        }
+
+        /* Water Tank Graphics Canvas */
+        .tank-container {
+            position: relative;
+            height: 220px;
+            background: #030712;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .pill-idle { background: rgba(156, 163, 175, 0.2); color: var(--text-dim); }
+        .pill-active { background: rgba(16, 185, 129, 0.2); color: var(--green); }
+        .pill-warn { background: rgba(245, 158, 11, 0.2); color: var(--amber); }
+
+        /* Hardware Metric Cards */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .card {
+            background: #030712;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+
+        .card-title {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        .card-val {
+            font-size: 0.9rem;
+            font-family: var(--font-mono);
+            color: var(--cyan);
+            margin-top: 2px;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #1f2937;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #374151;
+            border-color: var(--cyan);
+        }
+
+        button.primary {
+            background: #0891b2;
+            color: #fff;
+            border-color: var(--cyan);
+        }
+
+        button.primary:hover {
+            background: #0e7490;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Console Output */
+        .console-box {
+            background: #030712;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            height: 250px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .log-line { line-height: 1.4; }
+        .log-t { color: var(--text-dim); margin-right: 6px; }
+        .log-exec { color: var(--cyan); }
+        .log-ok { color: var(--green); }
+        .log-warn { color: var(--amber); }
+        .log-pwr { color: var(--purple); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>智能水箱 PMIC 與 FOC 馬達 HAL 層 DSL 控制模擬器</h1>
+        <p style="font-size: 0.8rem; color: var(--text-dim);">包含低功耗 CPU C-State 鎖定、軟啟動斜率、寬幅 AC 脈衝與石英除垢震盪驅動</p>
+    </header>
+
+    <div class="dsl-banner">
+        esset_ikite_dissolved_pupil.turn_assets_restrained(inducted_corts_relayed{tau_image_instructed[6::tube_turns-halo].C-locked_city.chained_assisted_plot})<br>
+        twinkle_image_curved_session.poured-yaw_function_disciplined-grasp_algo-system.slented_hike{bathed_ribbon.additive-[180-260].mono-pole_free().quatz_tosser()}
+    </div>
+
+    <div class="layout-grid">
+        <!-- Panel Left: Graphic & State Visualizer -->
+        <div class="panel">
+            <div class="panel-title">
+                水箱實體與電能驅動動態 (Physical Tank & Drive)
+                <span id="p-mode" class="status-pill pill-idle">C-LOCKED STANDBY</span>
+            </div>
+
+            <div class="tank-container">
+                <canvas id="tankCanvas"></canvas>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-title">Pump Bus Voltage</div>
+                    <div class="card-val" id="val-volts">0 V (Idle)</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Inrush / Power Diss.</div>
+                    <div class="card-val" id="val-pwr">0.8 W</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Optics Duty-Cycle</div>
+                    <div class="card-val" id="val-optics">Pulsed (5ms/s)</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Quartz Transducer</div>
+                    <div class="card-val" id="val-quartz">OFF</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="primary" id="btn-run" onclick="executeDSLSequence()">執行 DSL 抽水與淨化程序</button>
+                <button onclick="resetSystem()">重置狀態 (Reset)</button>
+            </div>
+        </div>
+
+        <!-- Panel Right: Execution Console -->
+        <div class="panel">
+            <div class="panel-title">
+                PMIC & HAL 軟硬體執行日誌
+                <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--cyan);">BUS: SMPS / PWM Ready</span>
+            </div>
+
+            <div class="console-box" id="console">
+                <div class="log-line"><span class="log-t">[00:00.000]</span>HAL Initialized. System in low-power C-State lock.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('tankCanvas');
+        const ctx = canvas.getContext('2d');
+        let isRunning = false;
+
+        // Visualizer State
+        let state = {
+            waterLevel: 0.65,
+            pumpActive: false,
+            busVoltage: 0,
+            quartzActive: false,
+            opticsFlash: false,
+            loadRestrained: false
+        };
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawTank() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Draw Water Body
+            const waterH = h * state.waterLevel;
+            const waterTop = h - waterH;
+
+            // Wave effect if pump active
+            ctx.fillStyle = 'rgba(6, 182, 212, 0.4)';
+            ctx.beginPath();
+            ctx.moveTo(0, waterTop);
+            for (let x = 0; x <= w; x += 20) {
+                let wave = state.pumpActive ? Math.sin((x + Date.now() * 0.1) * 0.05) * 4 : 0;
+                ctx.lineTo(x, waterTop + wave);
+            }
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw Optical Sensor Pulse Dot (twinkle_image)
+            ctx.fillStyle = state.opticsFlash ? '#f59e0b' : '#374151';
+            ctx.beginPath();
+            ctx.arc(w * 0.85, h * 0.3, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Quartz Ultrasonic Wave
+            if (state.quartzActive) {
+                ctx.strokeStyle = 'rgba(139, 92, 246, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                let qY = h * 0.85;
+                for (let r = 10; r < 60; r += 12) {
+                    ctx.arc(w * 0.2, qY, r, -Math.PI / 3, Math.PI / 3);
+                }
+                ctx.stroke();
+            }
+
+            requestAnimationFrame(drawTank);
+        }
+
+        drawTank();
+
+        function log(msg, type = 'info') {
+            const consoleElem = document.getElementById('console');
+            const now = new Date();
+            const timeStr = `[${String(now.getSeconds()).padStart(2, '0')}.${String(now.getMilliseconds()).padStart(3, '0')}]`;
+            const entry = document.createElement('div');
+            entry.className = 'log-line';
+            entry.innerHTML = `<span class="log-t">${timeStr}</span><span class="log-${type}">${msg}</span>`;
+            consoleElem.appendChild(entry);
+            consoleElem.scrollTop = consoleElem.scrollHeight;
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        async function executeDSLSequence() {
+            if (isRunning) return;
+            isRunning = true;
+            document.getElementById('btn-run').disabled = true;
+
+            // 1. esset_ikite_dissolved_pupil & turn_assets_restrained
+            log('1. [dissolved_pupil & turn_assets_restrained] 探測水質與水壓，觸發動態負載切斷...', 'exec');
+            state.loadRestrained = true;
+            document.getElementById('val-pwr').innerText = '0.2 W (Heating Cut)';
+            log('   └─ 切斷大功率加熱棒電源，防止空燒', 'warn');
+            await sleep(600);
+
+            // 2. tau_image_instructed[6::tube_turns-halo] & C-locked_city
+            log('2. [tube_turns-halo & C-locked] 6步進分段切換水閥，解鎖 CPU C-State...', 'exec');
+            await sleep(600);
+            document.getElementById('p-mode').className = 'status-pill pill-warn';
+            document.getElementById('p-mode').innerText = 'VALVE_STEPPING';
+            log('   └─ 螺線管閥門 6 步進脈衝開啟完成，避開電源電壓驟降 (Voltage Sag)', 'ok');
+            await sleep(600);
+
+            // 3. twinkle_image_curved_session
+            log('3. [twinkle_image] 啟動脈衝式光學水位採樣 (Duty-Cycled Power)...', 'exec');
+            state.opticsFlash = true;
+            document.getElementById('val-optics').innerText = 'Active Pulse (5ms)';
+            await sleep(500);
+            state.opticsFlash = false;
+            log('   └─ 採樣完畢，降壓關閉光學元件供電以節能', 'ok');
+
+            // 4. slented_hike & bathed_ribbon.additive-[180-260]
+            log('4. [slented_hike & bathed_ribbon] 馬達軟啟動升壓 (180V-260V AC/DC)...', 'exec');
+            document.getElementById('p-mode').className = 'status-pill pill-active';
+            document.getElementById('p-mode').innerText = 'RAMP_UP_FOC';
+            state.pumpActive = true;
+
+            for (let v = 0; v <= 240; v += 60) {
+                state.busVoltage = v;
+                document.getElementById('val-volts').innerText = `${v} V (PWM)`;
+                document.getElementById('val-pwr').innerText = `${(v * 0.15).toFixed(1)} W`;
+                await sleep(250);
+            }
+            log('   └─ 軟啟動完成，消除 Inrush Current，運行於 FOC 最佳扭矩點', 'pwr');
+
+            // 5. mono-pole_free() & quatz_tosser()
+            log('5. [mono-pole_free & quatz_tosser] 啟用續流能量回收並啟動石英超音波除垢...', 'exec');
+            state.quartzActive = true;
+            document.getElementById('val-quartz').innerText = '2.4MHz Active';
+            log('   └─ 石英震盪器觸發，進行水垢清洗與微量抑菌', 'ok');
+            await sleep(800);
+
+            log('✔ [DSL 程序執行完成] 智能水箱進入高效率水循環與動態保護狀態。', 'ok');
+            isRunning = false;
+            document.getElementById('btn-run').disabled = false;
+        }
+
+        function resetSystem() {
+            if (isRunning) return;
+            state = { waterLevel: 0.65, pumpActive: false, busVoltage: 0, quartzActive: false, opticsFlash: false, loadRestrained: false };
+            document.getElementById('val-volts').innerText = '0 V (Idle)';
+            document.getElementById('val-pwr').innerText = '0.8 W';
+            document.getElementById('val-optics').innerText = 'Pulsed (5ms/s)';
+            document.getElementById('val-quartz').innerText = 'OFF';
+            document.getElementById('p-mode').className = 'status-pill pill-idle';
+            document.getElementById('p-mode').innerText = 'C-LOCKED STANDBY';
+            log('=== 系統重置至 CPU C-State 待機狀態 ===', 'warn');
+        }
+    </script>
+</body>
+</html>

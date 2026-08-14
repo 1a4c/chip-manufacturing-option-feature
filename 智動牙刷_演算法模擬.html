@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Electric Toothbrush FOC & Pressure HAL Simulator</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --panel: #111827;
+            --border: #1f293d;
+            --cyan: #06b6d4;
+            --blue: #3b82f6;
+            --purple: #8b5cf6;
+            --green: #10b981;
+            --amber: #f59e0b;
+            --red: #ef4444;
+            --text: #f3f4f6;
+            --text-dim: #9ca3af;
+            --font-mono: 'JetBrains Mono', Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        h1 { font-size: 1.3rem; color: var(--cyan); margin-bottom: 4px; }
+
+        .math-banner {
+            background: #030712;
+            border: 1px solid var(--cyan);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            color: #67e8f9;
+            line-height: 1.4;
+            word-break: break-all;
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.12);
+        }
+
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        @media (max-width: 900px) { .layout-grid { grid-template-columns: 1fr; } }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .panel-title {
+            font-size: 0.92rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+        }
+
+        /* Toothbrush Dynamics Canvas */
+        .brush-container {
+            position: relative;
+            height: 220px;
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+        .status-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .pill-idle { background: rgba(156, 163, 175, 0.2); color: var(--text-dim); }
+        .pill-active { background: rgba(16, 185, 129, 0.2); color: var(--green); }
+        .pill-warn { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+
+        /* Hardware Metric Cards */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .card {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+
+        .card-title { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; }
+        .card-val { font-size: 0.88rem; font-family: var(--font-mono); color: var(--cyan); margin-top: 2px; }
+
+        .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        button {
+            background: #1f293d;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        button:hover { background: #374151; border-color: var(--cyan); }
+        button.primary { background: #0891b2; color: #fff; border-color: var(--cyan); }
+        button.primary:hover { background: #0e7490; }
+        button.danger { background: #991b1b; color: #fff; border-color: var(--red); }
+        button.danger:hover { background: #7f1d1d; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .console-box {
+            background: #030712;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            height: 250px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .log-line { line-height: 1.4; }
+        .log-t { color: var(--text-dim); margin-right: 6px; }
+        .log-exec { color: var(--cyan); }
+        .log-ok { color: var(--green); }
+        .log-warn { color: var(--amber); }
+        .log-err { color: var(--red); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>智慧電動牙刷 FOC 聲波馬達與姿態防壓演算法模擬器</h1>
+        <p style="font-size: 0.8rem; color: var(--text-dim);">包含防飛濺軟啟動 min(ã/2)、諧振相位追蹤 dθ/dπ、過壓減震 max|M/4| 與 IMU 分區追蹤</p>
+    </header>
+
+    <div class="math-banner">
+        ∫_S¹ σ₁ { (∂θ₁ / ∂π̃) [ lᶜ / ε(θ) ] } · ∏_{T₁} ∂σ_{θ_k} { k ∈ S₁ᶜ , max | M̃ / 4 | } × T₂^{∂σ_{ϕ_k}} · min(ã / 2)
+    </div>
+
+    <div class="layout-grid">
+        <!-- Panel Left: Graphic Visualizer -->
+        <div class="panel">
+            <div class="panel-title">
+                牙刷擺動與口腔分區動態 (Brush Head Dynamics)
+                <span id="p-mode" class="status-pill pill-idle">STANDBY</span>
+            </div>
+
+            <div class="brush-container">
+                <canvas id="brushCanvas"></canvas>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-title">Motor Speed (RPM)</div>
+                    <div class="card-val" id="val-rpm">0 RPM</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Tooth Pressure (g)</div>
+                    <div class="card-val" id="val-press">0 g (Air)</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">IMU Zone (T₁ × T₂)</div>
+                    <div class="card-val" id="val-zone">Zone 0 (Idle)</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Back-EMF Phase (dθ/dπ)</div>
+                    <div class="card-val" id="val-phase">0.00 rad/s</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="primary" id="btn-start" onclick="startBrushingProcess()">啟動刷牙流程</button>
+                <button class="danger" id="btn-press" onclick="triggerOverpressure()" disabled>模擬牙齦過壓 (Overpressure)</button>
+                <button onclick="resetSystem()">重置 (Reset)</button>
+            </div>
+        </div>
+
+        <!-- Panel Right: Algorithm Console Log -->
+        <div class="panel">
+            <div class="panel-title">
+                馬達 FOC 驅動與 IMU 演算法日誌
+                <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--cyan);">DSP Loop: 1kHz</span>
+            </div>
+
+            <div class="console-box" id="console">
+                <div class="log-line"><span class="log-t">[00:00.000]</span>System Ready. G-lattice scanning active.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('brushCanvas');
+        const ctx = canvas.getContext('2d');
+        let isRunning = false;
+
+        // Visualizer State
+        let state = {
+            rpm: 0,
+            targetRpm: 0,
+            vibeAmp: 0,
+            pressure: 0, // grams
+            overpressure: false,
+            zoneName: 'Zone 0 (Idle)',
+            phaseAngle: 0,
+            toothContact: false
+        };
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawBrush() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Draw Tooth Diagram
+            ctx.fillStyle = '#f3f4f6';
+            let toothX = w / 2 - 25;
+            let toothY = h / 2 - 40;
+            ctx.beginPath();
+            ctx.roundRect(toothX, toothY, 50, 60, 10);
+            ctx.fill();
+            ctx.strokeStyle = '#9ca3af';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw Brush Head
+            let vibrationOffset = state.vibeAmp * Math.sin(Date.now() * 0.05);
+            let brushX = toothX - 35 + vibrationOffset;
+            let brushY = toothY + 10;
+
+            // Warning Glow if Overpressure
+            if (state.overpressure) {
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+                ctx.beginPath();
+                ctx.arc(brushX + 15, brushY + 20, 35, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Brush Handle & Bristles
+            ctx.fillStyle = state.overpressure ? '#ef4444' : '#06b6d4';
+            ctx.fillRect(brushX, brushY, 12, 40); // Bristles base
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < 4; i++) {
+                ctx.fillRect(brushX + 12, brushY + 4 + i * 9, 15, 4); // Bristles
+            }
+
+            requestAnimationFrame(drawBrush);
+        }
+
+        drawBrush();
+
+        function log(msg, type = 'info') {
+            const consoleElem = document.getElementById('console');
+            const now = new Date();
+            const timeStr = `[${String(now.getSeconds()).padStart(2, '0')}.${String(now.getMilliseconds()).padStart(3, '0')}]`;
+            const entry = document.createElement('div');
+            entry.className = 'log-line';
+            entry.innerHTML = `<span class="log-t">${timeStr}</span><span class="log-${type}">${msg}</span>`;
+            consoleElem.appendChild(entry);
+            consoleElem.scrollTop = consoleElem.scrollHeight;
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        async function startBrushingProcess() {
+            if (isRunning) return;
+            isRunning = true;
+            document.getElementById('btn-start').disabled = true;
+
+            // 1. Air Mode min(ã/2) - Anti Splash
+            log('1. [min(ã/2)] 開機離口運轉：觸發防飛濺軟啟動...', 'exec');
+            document.getElementById('p-mode').className = 'status-pill pill-active';
+            document.getElementById('p-mode').innerText = 'ANTI-SPLASH (AIR)';
+            state.vibeAmp = 1.5;
+            state.rpm = 8000;
+            document.getElementById('val-rpm').innerText = '8,000 RPM';
+            document.getElementById('val-press').innerText = '0 g (Air)';
+            log('   └─ 馬達低速 8,000 RPM 運轉，避免牙膏飛濺', 'ok');
+            await sleep(1000);
+
+            // 2. Contact Teeth & Resonance Tracking dθ/dπ
+            log('2. [∂θ₁/∂π̃] 感測到接觸牙齒：鎖定諧振頻率，電壓斜升...', 'exec');
+            state.toothContact = true;
+            state.pressure = 120; // 120g normal pressure
+            document.getElementById('val-press').innerText = '120 g (Normal)';
+            document.getElementById('btn-press').disabled = false;
+
+            for (let r = 8000; r <= 38000; r += 6000) {
+                state.rpm = r;
+                state.vibeAmp = (r / 38000) * 5;
+                document.getElementById('val-rpm').innerText = `${r.toLocaleString()} RPM`;
+                document.getElementById('val-phase').innerText = `${(r * 0.082).toFixed(2)} rad/s`;
+                await sleep(150);
+            }
+            log('   └─ 達到最大諧振效率點 38,000 RPM，負載自動補償對齊', 'ok');
+            await sleep(500);
+
+            // 3. IMU Zone Tracking T1 x T2
+            log('3. [T₁ × T₂ Matrix] IMU 姿態矩陣觸發：分區辨識開始...', 'exec');
+            const zones = ['Zone 1 (左下咬合面)', 'Zone 2 (左下外側面)', 'Zone 3 (右下內側面)'];
+            for (let z of zones) {
+                if (state.overpressure) break;
+                state.zoneName = z;
+                document.getElementById('val-zone').innerText = z;
+                log(`   └─ 辨識口腔區域: ${z}，紀錄刷牙時間與角速度`, 'exec');
+                await sleep(1000);
+            }
+
+            if (!state.overpressure) {
+                log('✔ [刷牙完成] 38,000 RPM 穩定輸出，姿態覆蓋率 100%', 'ok');
+            }
+
+            isRunning = false;
+            document.getElementById('btn-start').disabled = false;
+        }
+
+        async function triggerOverpressure() {
+            if (state.overpressure) return;
+            state.overpressure = true;
+            document.getElementById('p-mode').className = 'status-pill pill-warn';
+            document.getElementById('p-mode').innerText = 'OVERPRESSURE WARNING';
+            state.pressure = 310; // >250g limit
+            document.getElementById('val-press').innerText = '310 g (DANGER)';
+
+            log('⚠️ [max |M̃/4|] 警告：感測到過度按壓 (310g > 250g 閾值)！', 'err');
+            log('   └─ 0.01 秒內進行過壓減震，RPM 下降至 12,000 以保護牙齦', 'warn');
+
+            state.rpm = 12000;
+            state.vibeAmp = 1.8;
+            document.getElementById('val-rpm').innerText = '12,000 RPM (Protected)';
+
+            await sleep(1500);
+            log('   └─ 壓力恢復正常，還原原廠諧振頻率', 'ok');
+            state.overpressure = false;
+            state.pressure = 130;
+            document.getElementById('val-press').innerText = '130 g (Normal)';
+            document.getElementById('p-mode').className = 'status-pill pill-active';
+            document.getElementById('p-mode').innerText = 'BRUSHING ACTIVE';
+            state.rpm = 38000;
+            state.vibeAmp = 5;
+            document.getElementById('val-rpm').innerText = '38,000 RPM';
+        }
+
+        function resetSystem() {
+            state = { rpm: 0, targetRpm: 0, vibeAmp: 0, pressure: 0, overpressure: false, zoneName: 'Zone 0 (Idle)', phaseAngle: 0, toothContact: false };
+            document.getElementById('val-rpm').innerText = '0 RPM';
+            document.getElementById('val-press').innerText = '0 g (Air)';
+            document.getElementById('val-zone').innerText = 'Zone 0 (Idle)';
+            document.getElementById('val-phase').innerText = '0.00 rad/s';
+            document.getElementById('p-mode').className = 'status-pill pill-idle';
+            document.getElementById('p-mode').innerText = 'STANDBY';
+            document.getElementById('btn-press').disabled = true;
+            document.getElementById('btn-start').disabled = false;
+            isRunning = false;
+            log('=== 系統重置至 G-lattice 低功耗待機狀態 ===', 'warn');
+        }
+    </script>
+</body>
+</html>

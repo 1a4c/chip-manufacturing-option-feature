@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>感測專用記憶體內運算資料庫晶片 (Sensing DB PIM ASIC) 模擬器</title>
+  <style>
+    :root {
+      --bg-dark: #020617;
+      --panel-bg: #0f172a;
+      --border-color: #1e293b;
+      --db-purple: #a855f7;
+      --echo-cyan: #06b6d4;
+      --puf-gold: #eab308;
+      --alert-red: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: monospace, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1100px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    header h1 {
+      font-size: 16px;
+      color: var(--db-purple);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      border: 1px solid var(--db-purple);
+      color: var(--db-purple);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: rgba(168, 85, 247, 0.1);
+    }
+
+    .grid-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    @media (max-width: 850px) { .grid-container { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .canvas-box {
+      width: 100%;
+      height: 260px;
+      background: #030712;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+    }
+
+    .scope-box {
+      width: 100%;
+      height: 110px;
+      background: #000;
+      border: 1px solid #3b0764;
+      border-radius: 6px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    .ctrl-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    input[type=range] { accent-color: var(--db-purple); cursor: pointer; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .metric-card {
+      background: #090d16;
+      border: 1px solid var(--border-color);
+      border-left: 3px solid var(--db-purple);
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .metric-card label { color: var(--text-muted); display: block; font-size: 10px; }
+    .metric-card .val { font-weight: bold; font-size: 13px; margin-top: 2px; }
+
+    .btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:hover { background: #334155; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>💾 IN-MEMORY SENSING DB ASIC :: 記憶體內感測資料庫晶片控台</h1>
+    <span class="badge">E-STAMPED_PIM_DB_V1</span>
+  </header>
+
+  <div class="grid-container">
+    <!-- 左側：ReRAM 記憶體陣列與類比特徵映射 (Crossbar Array & Data Lens) -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>晶片 ReRAM Crossbar 記憶體陣列電位 (Memory State)</span>
+        <span>📍 點擊陣列注入異常特徵數據</span>
+      </div>
+
+      <canvas class="canvas-box" id="dbCanvas"></canvas>
+
+      <div class="controls">
+        <div class="ctrl-group">
+          <label>感測吞吐率 (Data Ingress Speed): <span id="speed-val">2.4 TB/s</span></label>
+          <input type="range" id="speedSlider" min="0.5" max="5.0" step="0.1" value="2.4">
+        </div>
+        <div class="ctrl-group">
+          <label>透鏡放大強度 (Lens-Route Gain): <span id="lens-val">1.0x</span></label>
+          <input type="range" id="lensSlider" min="1.0" max="4.0" step="0.2" value="1.0">
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button class="btn" style="flex:1;" onclick="triggerAnomaly()">🌪️ 觸發「颱風級」突發異樣數據</button>
+        <button class="btn" style="flex:1;" onclick="triggerEStamp()">🔐 執行 E-Stamped PUF 硬體鎖定</button>
+      </div>
+    </div>
+
+    <!-- 右側：類比迴聲搜尋波形與資料庫狀態指標 -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>類比迴聲搜尋波形 (Echo Match Waveform)</span>
+        <span style="color: var(--echo-cyan);">CH1: 搜尋波形 $V_{\text{echo}}$ | CH2: 隊列負載 $I_{\text{queue}}$</span>
+      </div>
+
+      <canvas class="scope-box" id="scopeCanvas"></canvas>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <label>資料庫寫入+索引延遲</label>
+          <div class="val" id="latency-val" style="color:var(--echo-cyan);">&lt; 0.8 ns</div>
+        </div>
+        <div class="metric-card">
+          <label>PUF 硬體安全鋼印驗證</label>
+          <div class="val" id="puf-val" style="color:var(--puf-gold);">LOCKED (110-E)</div>
+        </div>
+        <div class="metric-card">
+          <label>記憶體陣列功耗 (PIM Power)</label>
+          <div class="val" id="power-val" style="color:#10b981;">34.2 mW</div>
+        </div>
+        <div class="metric-card">
+          <label>異常特徵捕捉率 (Typhoon Lens)</label>
+          <div class="val" id="feature-val">99.98%</div>
+        </div>
+      </div>
+
+      <div class="panel-title" style="margin-top:4px;">晶片硬體邏輯狀態 (ASIC Hardware Log)</div>
+      <div style="font-size:11px; background:#030712; border:1px solid #1e293b; padding:8px; border-radius:4px; line-height:1.5; color:#cbd5e1;" id="chip-log">
+        [PIM_DB_READY] ReRAM 交叉陣列運作正常，連續感測資料流正透過類比電壓直接寫入並建立零延遲索引。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dbCanvas = document.getElementById('dbCanvas');
+    const cCtx = dbCanvas.getContext('2d');
+    const scopeCanvas = document.getElementById('scopeCanvas');
+    const sCtx = scopeCanvas.getContext('2d');
+
+    dbCanvas.width = dbCanvas.clientWidth;
+    dbCanvas.height = dbCanvas.clientHeight;
+    scopeCanvas.width = scopeCanvas.clientWidth;
+    scopeCanvas.height = scopeCanvas.clientHeight;
+
+    const cols = 24, rows = 14;
+    let memArray = Array(cols).fill(0).map(() => Array(rows).fill(0));
+    let pufLocked = true;
+
+    let ch1History = Array(100).fill(0); // Echo Wave
+    let ch2History = Array(100).fill(0); // Queue Current
+
+    let ingressSpeed = 2.4;
+    let lensGain = 1.0;
+
+    document.getElementById('speedSlider').addEventListener('input', (e) => {
+      ingressSpeed = parseFloat(e.target.value);
+      document.getElementById('speed-val').innerText = ingressSpeed.toFixed(1) + ' TB/s';
+    });
+    document.getElementById('lensSlider').addEventListener('input', (e) => {
+      lensGain = parseFloat(e.target.value);
+      document.getElementById('lens-val').innerText = lensGain.toFixed(1) + 'x';
+    });
+
+    dbCanvas.addEventListener('click', (e) => {
+      const rect = dbCanvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      const c = Math.floor((clickX / rect.width) * cols);
+      const r = Math.floor((clickY / rect.height) * rows);
+
+      if (c >= 0 && c < cols && r >= 0 && r < rows) {
+        memArray[c][r] = 5.0; // 寫入高電位特徵點
+      }
+    });
+
+    function triggerAnomaly() {
+      // 隨機注入大量「颱風級」極端異常數據
+      for(let i=0; i<15; i++) {
+        let rc = Math.floor(Math.random() * cols);
+        let rr = Math.floor(Math.random() * rows);
+        memArray[rc][rr] = 8.0;
+      }
+      lensGain = 3.2;
+      document.getElementById('lensSlider').value = 3.2;
+      document.getElementById('lens-val').innerText = '3.2x';
+    }
+
+    function triggerEStamp() {
+      pufLocked = !pufLocked;
+      const pufEl = document.getElementById('puf-val');
+      if (pufLocked) {
+        pufEl.innerText = "LOCKED (110-E)";
+        pufEl.style.color = "var(--puf-gold)";
+      } else {
+        pufEl.innerText = "UNLOCKED (RAW)";
+        pufEl.style.color = "var(--alert-red)";
+      }
+    }
+
+    // PIM 資料庫晶片運算循環
+    function dbPhysicsLoop() {
+      let anomalyCount = 0;
+
+      // 1. 動態寫入與電位擴散
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          if (Math.random() < ingressSpeed * 0.02) {
+            memArray[c][r] += Math.random() * 0.5;
+          }
+          memArray[c][r] *= 0.97; // 電荷自然微小衰減
+
+          if (memArray[c][r] * lensGain > 4.0) {
+            anomalyCount++;
+          }
+        }
+      }
+
+      // 2. 波形與 PIM 功耗計算
+      let echoWave = Math.sin(Date.now() * 0.01) * 2.0 + (anomalyCount * 0.3);
+      let queueCurrent = (ingressSpeed * 5.0) + (anomalyCount * 1.5);
+      let power = 20.0 + (ingressSpeed * 4.0) + (anomalyCount * 0.8);
+
+      // UI 更新
+      document.getElementById('power-val').innerText = power.toFixed(1) + ' mW';
+      const log = document.getElementById('chip-log');
+
+      if (anomalyCount > 5) {
+        log.innerText = `🚨 [TYPHOON_FEATURE_DETECTED] 觸發「動態透鏡路由」！捕捉到 ${anomalyCount} 個極端感測異樣點，已自動寫入 Elite_sector_pounds 快閃區塊並施加 E-Stamped 鋼印。`;
+        log.style.borderColor = "var(--alert-red)";
+      } else if (!pufLocked) {
+        log.innerText = "⚠️ [UNLOCKED_WARNING] PUF 硬體防篡改鎖定已解除，目前寫入之感測資料缺乏原始物理鋼印認證。";
+        log.style.borderColor = "var(--puf-gold)";
+      } else {
+        log.innerText = "✅ [PIM_SEARCH_OPTIMAL] 記憶體內類比迴聲比對（Echoed Match）運行中，檢索延遲 < 0.8ns，無傳統 CPU 解碼開銷。";
+        log.style.borderColor = "var(--border-color)";
+      }
+
+      ch1History.push(echoWave); ch1History.shift();
+      ch2History.push(queueCurrent); ch2History.shift();
+
+      renderDbCanvas();
+      renderScopeCanvas();
+
+      requestAnimationFrame(dbPhysicsLoop);
+    }
+
+    function renderDbCanvas() {
+      cCtx.clearRect(0, 0, dbCanvas.width, dbCanvas.height);
+      const cellW = dbCanvas.width / cols;
+      const cellH = dbCanvas.height / rows;
+
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          let val = memArray[c][r] * lensGain;
+          let alpha = Math.min(1, val / 5.0);
+
+          if (val > 4.0) {
+            cCtx.fillStyle = `rgba(239, 68, 68, ${alpha})`; // 極端異常點
+          } else if (val > 1.0) {
+            cCtx.fillStyle = `rgba(168, 85, 247, ${alpha})`; // 常規資料寫入區
+          } else {
+            cCtx.fillStyle = '#091026';
+          }
+
+          cCtx.fillRect(c * cellW, r * cellH, cellW - 1, cellH - 1);
+        }
+      }
+    }
+
+    function renderScopeCanvas() {
+      sCtx.fillStyle = '#000';
+      sCtx.fillRect(0, 0, scopeCanvas.width, scopeCanvas.height);
+
+      sCtx.strokeStyle = '#2e1065';
+      sCtx.lineWidth = 0.5;
+      for (let x = 0; x < scopeCanvas.width; x += 25) {
+        sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, scopeCanvas.height); sCtx.stroke();
+      }
+
+      const stepX = scopeCanvas.width / ch1History.length;
+
+      // CH1: Echo Wave (Cyan)
+      sCtx.strokeStyle = '#06b6d4';
+      sCtx.lineWidth = 1.8;
+      sCtx.beginPath();
+      for (let i = 0; i < ch1History.length; i++) {
+        let y = (scopeCanvas.height / 2) - (ch1History[i] / 8.0) * scopeCanvas.height;
+        if (i === 0) sCtx.moveTo(0, y); else sCtx.lineTo(i * stepX, y);
+      }
+      sCtx.stroke();
+
+      // CH2: Queue Current (Purple)
+      sCtx.strokeStyle = '#a855f7';
+      sCtx.lineWidth = 1.2;
+      sCtx.beginPath();
+      for (let i = 0; i < ch2History.length; i++) {
+        let y = scopeCanvas.height - (ch2History[i] / 45.0) * scopeCanvas.height;
+        if (i === 0) sCtx.moveTo(0, y); else sCtx.lineTo(i * stepX, y);
+      }
+      sCtx.stroke();
+    }
+
+    dbPhysicsLoop();
+  </script>
+</body>
+</html>

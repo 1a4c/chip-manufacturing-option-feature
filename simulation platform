@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT 半導體晶片測試與自我修復模擬平台</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: JetBrains Mono & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#080b11',
+                            panel: 'rgba(15, 23, 42, 0.75)',
+                            border: 'rgba(0, 243, 255, 0.2)',
+                            cyan: '#00f3ff',
+                            amber: '#ffb700',
+                            green: '#00ff88',
+                            red: '#ff3366',
+                            purple: '#b026ff',
+                            slate: '#1e293b'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                        sans: ['"Inter"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #080b11;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(0, 243, 255, 0.08) 0%, transparent 60%),
+                radial-gradient(circle at 100% 100%, rgba(176, 38, 255, 0.05) 0%, transparent 50%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+        }
+
+        .glass-panel {
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 243, 255, 0.18);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .glass-panel-active {
+            border-color: rgba(0, 243, 255, 0.6);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.25);
+        }
+
+        .glow-text-cyan { text-shadow: 0 0 10px rgba(0, 243, 255, 0.7); }
+        .glow-text-green { text-shadow: 0 0 10px rgba(0, ff, 136, 0.7); }
+        .glow-text-red { text-shadow: 0 0 10px rgba(255, 51, 102, 0.7); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0, 243, 255, 0.6); }
+
+        .led-indicator {
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+
+        .scan-effect::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 2px;
+            background: rgba(0, 243, 255, 0.4);
+            box-shadow: 0 0 8px #00f3ff;
+            opacity: 0.6;
+            animation: scanline 4s linear infinite;
+            pointer-events: none;
+        }
+
+        /* Scan pulse animation for memory cells */
+        @keyframes pulse-amber {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; filter: drop-shadow(0 0 8px #ffb700); }
+        }
+        .animate-pulse-amber { animation: pulse-amber 1s infinite; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-2 md:p-4 text-xs md:text-sm">
+
+    <!-- HEADER / TOP CONTROL BAR -->
+    <header class="glass-panel rounded-xl p-3 md:p-4 mb-4">
+        <div class="flex flex-col lg:flex-row items-center justify-between gap-4">
+            
+            <!-- Title & Branding -->
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-cyan-950/60 border border-cyber-cyan/50 rounded-lg text-cyber-cyan text-xl">
+                    <i class="fa-solid fa-microchip fa-spin" style="animation-duration: 12s;"></i>
+                </div>
+                <div>
+                    <h1 class="text-base md:text-xl font-bold tracking-wider text-white flex items-center gap-2">
+                        IoT 半導體晶片測試與自我修復模擬平台
+                        <span class="text-xs px-2 py-0.5 rounded bg-cyber-cyan/20 text-cyber-cyan border border-cyber-cyan/40 font-mono">v3.8-PROD</span>
+                    </h1>
+                    <p class="text-xs text-slate-400 font-mono">SystemLayer • IoTLayer • FirmwareLayer • TestLayer • DeviceLayer • StorageLayer</p>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex flex-wrap items-center justify-center gap-2 md:gap-3 w-full lg:w-auto">
+                <button id="btn-auto-run" onclick="startAutoSimulation()" class="px-3 md:px-4 py-2 bg-cyber-cyan/20 hover:bg-cyber-cyan/30 text-cyber-cyan border border-cyber-cyan/60 rounded-lg font-mono font-semibold transition-all duration-200 flex items-center gap-2 shadow-[0_0_15px_rgba(0,243,255,0.2)] active:scale-95">
+                    <i class="fa-solid fa-play text-xs"></i> 啟動自動流程
+                </button>
+                
+                <button id="btn-step-run" onclick="executeNextStep()" class="px-3 md:px-4 py-2 bg-cyber-amber/20 hover:bg-cyber-amber/30 text-cyber-amber border border-cyber-amber/60 rounded-lg font-mono font-semibold transition-all duration-200 flex items-center gap-2 active:scale-95">
+                    <i class="fa-solid fa-forward-step text-xs"></i> 逐步執行
+                </button>
+
+                <button id="btn-reset" onclick="resetSimulation()" class="px-3 md:px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-lg font-mono transition-all duration-200 flex items-center gap-2 active:scale-95">
+                    <i class="fa-solid fa-rotate-left text-xs"></i> 重設系統
+                </button>
+
+                <!-- Speed Selector -->
+                <div class="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-1 font-mono text-xs">
+                    <span class="text-slate-400 px-2">速度:</span>
+                    <button onclick="setSpeed(1)" id="speed-1" class="px-2 py-0.5 rounded bg-cyber-cyan text-black font-bold">1x</button>
+                    <button onclick="setSpeed(2)" id="speed-2" class="px-2 py-0.5 rounded text-slate-400 hover:text-white">2x</button>
+                    <button onclick="setSpeed(5)" id="speed-5" class="px-2 py-0.5 rounded text-slate-400 hover:text-white">5x</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Telemetry Bar -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-4 mt-4 pt-3 border-t border-slate-800/80 font-mono text-xs">
+            
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">D-Lock 鎖定:</span>
+                <span id="metric-dlock" class="font-bold text-slate-500 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-slate-500 inline-block"></span> 未鎖定
+                </span>
+            </div>
+
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">CoAP 閘道:</span>
+                <span id="metric-coap" class="font-bold text-cyber-cyan flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-cyber-cyan led-indicator inline-block"></span> READY
+                </span>
+            </div>
+
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">核心溫度:</span>
+                <span id="metric-temp" class="font-bold text-cyber-cyan">38.5 °C</span>
+            </div>
+
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">Burn-in 負載:</span>
+                <span id="metric-load" class="font-bold text-slate-400">0 %</span>
+            </div>
+
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">良品磁區率:</span>
+                <span id="metric-yield" class="font-bold text-cyber-cyan glow-text-cyan">1 / 5</span>
+            </div>
+
+            <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
+                <span class="text-slate-400">系統狀態:</span>
+                <span id="metric-status" class="font-bold text-cyber-green">STANDBY</span>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- MAIN DASHBOARD CONTENT GRID -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4 flex-1">
+
+        <!-- LEFT / MAIN VISUALIZATION CANVAS & HARDWARE MAP (8 COLS) -->
+        <div class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- CANVAS HARDWARE MAP PANEL -->
+            <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col relative overflow-hidden scan-effect">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2 font-mono">
+                        <i class="fa-solid fa-microchip text-cyber-cyan"></i>
+                        <span class="font-bold text-white tracking-wider">晶片實體磁區與記憶單元陣列 (Memory Grid & eFuse Circuit)</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs font-mono">
+                        <button onclick="injectRandomFault()" class="px-2 py-1 bg-cyber-red/20 text-cyber-red hover:bg-cyber-red/30 border border-cyber-red/40 rounded transition-all">
+                            <i class="fa-solid fa-bug"></i> 手動注入故障
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Interactive Hardware Map Visualization Canvas -->
+                <div class="relative flex-1 min-h-[320px] bg-slate-950/80 rounded-lg border border-slate-800/80 p-3 flex flex-col justify-between">
+                    
+                    <!-- CoAP Packet Data Stream Animation Row -->
+                    <div id="coap-streamer-bar" class="w-full bg-slate-900/90 border border-slate-800 rounded p-2 mb-3 flex items-center justify-between font-mono text-xs relative overflow-hidden">
+                        <div class="flex items-center gap-2 z-10">
+                            <span class="text-slate-500">CoAP Packet Flow:</span>
+                            <span id="coap-packet-status" class="text-cyber-cyan font-semibold">靜態等待指令 (IDLE)</span>
+                        </div>
+                        <div id="coap-sig-badge" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-500 border border-slate-700 z-10">
+                            SIG: <span id="sig-val">N/A</span>
+                        </div>
+                        <!-- Animated Packet Object -->
+                        <div id="animated-packet" class="absolute top-0 bottom-0 w-16 bg-gradient-to-r from-transparent via-cyber-cyan/30 to-transparent left-[-100%] transition-all duration-700 pointer-events-none"></div>
+                    </div>
+
+                    <!-- Sector Grid Container -->
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 my-auto">
+                        <!-- Sector 0 -->
+                        <div id="sector-card-0" class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 flex flex-col gap-2 transition-all duration-300">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <span class="font-mono font-bold text-xs text-cyber-cyan">Sector 0</span>
+                                <span id="sec-tag-0" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyber-green/20 text-cyber-green">NORMAL</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5" id="cells-sec-0"></div>
+                            <div class="mt-1 text-[10px] font-mono text-slate-500 flex justify-between">
+                                <span>eFuse: <span id="efuse-0" class="text-cyber-green">INTACT</span></span>
+                                <span>Spare: <span id="spare-0">OFF</span></span>
+                            </div>
+                        </div>
+
+                        <!-- Sector 1 -->
+                        <div id="sector-card-1" class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 flex flex-col gap-2 transition-all duration-300">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <span class="font-mono font-bold text-xs text-cyber-cyan">Sector 1</span>
+                                <span id="sec-tag-1" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">UNCHECKED</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5" id="cells-sec-1"></div>
+                            <div class="mt-1 text-[10px] font-mono text-slate-500 flex justify-between">
+                                <span>eFuse: <span id="efuse-1" class="text-slate-400">INTACT</span></span>
+                                <span>Spare: <span id="spare-1">OFF</span></span>
+                            </div>
+                        </div>
+
+                        <!-- Sector 2 -->
+                        <div id="sector-card-2" class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 flex flex-col gap-2 transition-all duration-300">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <span class="font-mono font-bold text-xs text-cyber-cyan">Sector 2</span>
+                                <span id="sec-tag-2" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">UNCHECKED</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5" id="cells-sec-2"></div>
+                            <div class="mt-1 text-[10px] font-mono text-slate-500 flex justify-between">
+                                <span>eFuse: <span id="efuse-2" class="text-slate-400">INTACT</span></span>
+                                <span>Spare: <span id="spare-2">OFF</span></span>
+                            </div>
+                        </div>
+
+                        <!-- Sector 3 -->
+                        <div id="sector-card-3" class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 flex flex-col gap-2 transition-all duration-300">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <span class="font-mono font-bold text-xs text-cyber-cyan">Sector 3</span>
+                                <span id="sec-tag-3" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">UNCHECKED</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5" id="cells-sec-3"></div>
+                            <div class="mt-1 text-[10px] font-mono text-slate-500 flex justify-between">
+                                <span>eFuse: <span id="efuse-3" class="text-slate-400">INTACT</span></span>
+                                <span>Spare: <span id="spare-3">OFF</span></span>
+                            </div>
+                        </div>
+
+                        <!-- Sector 4 (Represents Sec 7 fault in spec) -->
+                        <div id="sector-card-4" class="bg-slate-900/70 border border-slate-800 rounded-lg p-2 flex flex-col gap-2 transition-all duration-300">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+                                <span class="font-mono font-bold text-xs text-cyber-cyan">Sector 7</span>
+                                <span id="sec-tag-4" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">UNCHECKED</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5" id="cells-sec-4"></div>
+                            <div class="mt-1 text-[10px] font-mono text-slate-500 flex justify-between">
+                                <span>eFuse: <span id="efuse-4" class="text-slate-400">INTACT</span></span>
+                                <span>Spare: <span id="spare-4">OFF</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Legend -->
+                    <div class="mt-3 pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-cyber-cyan/30 border border-cyber-cyan inline-block"></span> 良品單元
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-cyber-amber/50 border border-cyber-amber animate-pulse inline-block"></span> 探針掃描中
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-cyber-red/80 border border-cyber-red inline-block"></span> 不良/損壞位址
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-cyber-purple/80 border border-cyber-purple inline-block"></span> 電洞注入定位
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-slate-800 border border-red-900 text-red-500 text-[9px] flex items-center justify-center font-bold inline-block">✕</span> eFuse 熔斷隔離
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded bg-cyber-green/30 border border-cyber-green inline-block"></span> 備援單元接管
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- LAYER-BY-LAYER ARCHITECTURE STATUS BOARD -->
+            <div class="glass-panel rounded-xl p-4">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2 font-mono">
+                        <i class="fa-solid fa-layer-group text-cyber-cyan"></i>
+                        <span class="font-bold text-white tracking-wider">六層式測試與自我修復架構狀態 (Six-Layer Architecture Board)</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 font-mono text-xs">
+                    
+                    <!-- SystemLayer -->
+                    <div id="layer-card-system" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>SystemLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-system"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>事件計數: <span id="sys-events" class="text-white">0</span></div>
+                            <div>D-locking: <span id="sys-dlock" class="text-slate-500">OFF</span></div>
+                            <div>System-Prospensed: <span id="sys-pause" class="text-slate-500">READY</span></div>
+                        </div>
+                    </div>
+
+                    <!-- IoTLayer -->
+                    <div id="layer-card-iot" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>IoTLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-iot"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>urge-coap: <span id="iot-cmd" class="text-slate-500">IDLE</span></div>
+                            <div>port_id: <span id="iot-port" class="text-white">0x88F2</span></div>
+                            <div>porting_sign: <span id="iot-sign" class="text-slate-500">UNVERIFIED</span></div>
+                        </div>
+                    </div>
+
+                    <!-- FirmwareLayer -->
+                    <div id="layer-card-firmware" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>FirmwareLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-firmware"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>trude-stamp: <span id="fw-stamp" class="text-slate-500">NONE</span></div>
+                            <div>segmented: <span id="fw-seg" class="text-slate-500">IDLE</span></div>
+                            <div>disclosed-core: <span id="fw-core" class="text-slate-500">NORMAL</span></div>
+                        </div>
+                    </div>
+
+                    <!-- TestLayer -->
+                    <div id="layer-card-test" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>TestLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-test"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>teeth_probe: <span id="test-probe" class="text-slate-500">STANDBY</span></div>
+                            <div>Burn-In 輪數: <span id="test-burnin" class="text-slate-500">0 / 3</span></div>
+                            <div>high-load 應力: <span id="test-stress" class="text-slate-500">OFF</span></div>
+                        </div>
+                    </div>
+
+                    <!-- DeviceLayer -->
+                    <div id="layer-card-device" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>DeviceLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-device"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>heteo_junction: <span id="dev-hetero" class="text-slate-500">IDLE</span></div>
+                            <div>pumped-holes0: <span id="dev-holes" class="text-slate-500">0 Loc</span></div>
+                            <div>deleting-fused: <span id="dev-efuse" class="text-slate-500">READY</span></div>
+                        </div>
+                    </div>
+
+                    <!-- StorageLayer -->
+                    <div id="layer-card-storage" class="bg-slate-900/60 border border-slate-800 rounded-lg p-2.5 transition-all">
+                        <div class="text-cyber-cyan font-bold mb-1 flex items-center justify-between">
+                            <span>StorageLayer</span>
+                            <span class="w-2 h-2 rounded-full bg-slate-600" id="dot-storage"></span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 flex flex-col gap-1">
+                            <div>partitioned-sector: <span id="stg-partition" class="text-white">5 Sec</span></div>
+                            <div>pooled 良品池: <span id="stg-pooled" class="text-cyber-amber">1 / 5</span></div>
+                            <div>occuleased: <span id="stg-status" class="text-slate-500">HOLD</span></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT / REAL-TIME TERMINAL LOG & METRICS (4 COLS) -->
+        <div class="lg:col-span-4 flex flex-col gap-4">
+            
+            <!-- REAL-TIME LOG TERMINAL PANEL -->
+            <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col font-mono text-xs">
+                <div class="flex items-center justify-between mb-2 pb-2 border-b border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-terminal text-cyber-cyan"></i>
+                        <span class="font-bold text-white">實時遙測與事件終端 (Telemetry Terminal)</span>
+                    </div>
+                    <button onclick="clearTerminal()" class="text-slate-500 hover:text-slate-300 text-[11px]">
+                        <i class="fa-solid fa-trash-can"></i> 清除
+                    </button>
+                </div>
+
+                <!-- Terminal Console Body -->
+                <div id="terminal-body" class="flex-1 bg-slate-950 p-3 rounded-lg border border-slate-800/80 overflow-y-auto max-h-[480px] min-h-[300px] flex flex-col gap-1.5 text-[11px] leading-relaxed">
+                    <div class="text-slate-500">[SYSTEM_INIT] 晶片測試控制平台初始化完成。等待 CoAP 指令...</div>
+                </div>
+
+                <!-- Step Description Footer -->
+                <div class="mt-3 p-2.5 bg-slate-900/90 rounded border border-slate-800 text-xs">
+                    <div class="text-cyber-cyan font-bold mb-0.5" id="current-step-title">當前階段: 0 - 系統待命 (IDLE)</div>
+                    <div class="text-slate-400 text-[11px]" id="current-step-desc">點擊「啟動自動流程」或「逐步執行」開始執行完整的 IoT 測試與自我修復程序。</div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="glass-panel rounded-xl p-3 text-center font-mono text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div>
+            IoT Semiconductor Autonomous Test & Healing Architecture Simulation Platform
+        </div>
+        <div class="flex items-center gap-4">
+            <span>Status: <span id="footer-status" class="text-cyber-green">ONLINE</span></span>
+            <span>Protocol: <span class="text-cyber-cyan">CoAP / UDP</span></span>
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT SIMULATION ENGINE -->
+    <script>
+        // --- SIMULATION STATE MANAGEMENT ---
+        const totalSectors = 5;
+        const cellsPerSector = 6;
+        
+        // Simulation steps index
+        let currentStep = 0;
+        let isRunningAuto = false;
+        let simSpeed = 1; // 1x, 2x, 5x
+        let timerId = null;
+
+        let eventCount = 0;
+        let dLockEngaged = false;
+        let burnInRound = 0;
+        
+        // Memory Array State
+        // Bad sectors defined in prompt: Sectors 1, 2, 3, 7 (mapped as index 1, 2, 3, 4)
+        let sectorsState = [
+            { id: 0, label: 'Sector 0', status: 'HEALTHY', efuse: 'INTACT', spare: false, badCells: [] },
+            { id: 1, label: 'Sector 1', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [1, 4] },
+            { id: 2, label: 'Sector 2', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [0, 3] },
+            { id: 3, label: 'Sector 3', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [2, 5] },
+            { id: 4, label: 'Sector 7', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [1, 2] },
+        ];
+
+        // Steps sequence definition matching spec story
+        const simulationSteps = [
+            { id: 1, name: "CoAP 指令接收與簽章驗證", layer: "IoTLayer", fn: step1_CoAPReceive },
+            { id: 2, name: "SystemLayer 資料鎖定 (D-Locking)", layer: "SystemLayer", fn: step2_DLocking },
+            { id: 3, name: "Firmware 時間戳與封包分段", layer: "FirmwareLayer", fn: step3_FirmwareStamp },
+            { id: 4, name: "TestLayer 探針磁區掃描 (teeth_probe)", layer: "TestLayer", fn: step4_ProbeScan },
+            { id: 5, name: "TestLayer 三輪 Burn-in 應力測試", layer: "TestLayer", fn: step5_BurnInStress },
+            { id: 6, name: "DeviceLayer 電洞注入定位 (pumped-holes0)", layer: "DeviceLayer", fn: step6_HoleInjection },
+            { id: 7, name: "DeviceLayer eFuse 熔斷與備援切換", layer: "DeviceLayer", fn: step7_EFuseBlow },
+            { id: 8, name: "StorageLayer 磁區重新池化 (pooled)", layer: "StorageLayer", fn: step8_StoragePool },
+            { id: 9, name: "良品率總結與解鎖暫停 (system-prospensed)", layer: "SystemLayer", fn: step9_CompleteAndPause }
+        ];
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            renderCellsGrid();
+            updateUI();
+            logTerminal("SYSTEM_INIT", "平台準備就緒。磁區 0 預設為良品，磁區 1、2、3、7 待測。", "info");
+        };
+
+        // Render Memory cells grid inside each sector card
+        function renderCellsGrid() {
+            for (let s = 0; s < totalSectors; s++) {
+                const container = document.getElementById(`cells-sec-${s}`);
+                container.innerHTML = '';
+                
+                for (let c = 0; c < cellsPerSector; c++) {
+                    const cellDiv = document.createElement('div');
+                    cellDiv.id = `cell-${s}-${c}`;
+                    cellDiv.className = `h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-cyber-cyan/10 border-cyber-cyan/30 text-cyber-cyan`;
+                    cellDiv.innerText = `C${c}`;
+                    container.appendChild(cellDiv);
+                }
+            }
+        }
+
+        // --- TERMINAL LOGGING ---
+        function logTerminal(layer, message, type = "info") {
+            const terminal = document.getElementById('terminal-body');
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}.${String(now.getMilliseconds()).padStart(3,'0')}`;
+            
+            let colorClass = "text-slate-300";
+            let badgeBg = "bg-slate-800 text-slate-300 border-slate-700";
+
+            if (type === "warn") {
+                colorClass = "text-cyber-amber";
+                badgeBg = "bg-amber-950/80 text-cyber-amber border-amber-800/80";
+            } else if (type === "danger" || type === "error") {
+                colorClass = "text-cyber-red";
+                badgeBg = "bg-red-950/80 text-cyber-red border-red-800/80";
+            } else if (type === "success") {
+                colorClass = "text-cyber-green";
+                badgeBg = "bg-emerald-950/80 text-cyber-green border-emerald-800/80";
+            } else if (type === "purple") {
+                colorClass = "text-cyber-purple";
+                badgeBg = "bg-purple-950/80 text-cyber-purple border-purple-800/80";
+            }
+
+            const entry = document.createElement('div');
+            entry.className = `flex items-start gap-2 ${colorClass} animate-fade-in`;
+            entry.innerHTML = `
+                <span class="text-slate-500 shrink-0">[${timeStr}]</span>
+                <span class="px-1.5 py-0.2 text-[9px] rounded border font-mono shrink-0 ${badgeBg}">${layer}</span>
+                <span class="break-all">${message}</span>
+            `;
+            
+            terminal.appendChild(entry);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminal-body').innerHTML = '<div class="text-slate-500">[LOG_CLEARED] 終端日誌已清除。</div>';
+        }
+
+        // --- SPEED CONTROL ---
+        function setSpeed(sp) {
+            simSpeed = sp;
+            [1, 2, 5].forEach(s => {
+                const btn = document.getElementById(`speed-${s}`);
+                if (s === sp) {
+                    btn.className = "px-2 py-0.5 rounded bg-cyber-cyan text-black font-bold";
+                } else {
+                    btn.className = "px-2 py-0.5 rounded text-slate-400 hover:text-white";
+                }
+            });
+        }
+
+        // --- SIMULATION EXECUTION FLOW CONTROLLER ---
+        function startAutoSimulation() {
+            if (isRunningAuto) return;
+            isRunningAuto = true;
+            document.getElementById('btn-auto-run').classList.add('opacity-50', 'cursor-not-allowed');
+            
+            if (currentStep >= simulationSteps.length) {
+                resetSimulation();
+            }
+
+            runAutoNextStep();
+        }
+
+        function runAutoNextStep() {
+            if (!isRunningAuto) return;
+
+            if (currentStep < simulationSteps.length) {
+                executeNextStep();
+                const delay = 1800 / simSpeed;
+                timerId = setTimeout(runAutoNextStep, delay);
+            } else {
+                isRunningAuto = false;
+                document.getElementById('btn-auto-run').classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        function executeNextStep() {
+            if (currentStep >= simulationSteps.length) {
+                logTerminal("SYSTEM", "所有模擬步驟已完成，請重設系統後重新執行。", "warn");
+                return;
+            }
+
+            const step = simulationSteps[currentStep];
+            document.getElementById('current-step-title').innerText = `當前階段: ${step.id} - ${step.name}`;
+            
+            // Execute step function
+            step.fn();
+
+            currentStep++;
+            updateUI();
+        }
+
+        function resetSimulation() {
+            isRunningAuto = false;
+            clearTimeout(timerId);
+            currentStep = 0;
+            eventCount = 0;
+            dLockEngaged = false;
+            burnInRound = 0;
+
+            // Reset sectors
+            sectorsState = [
+                { id: 0, label: 'Sector 0', status: 'HEALTHY', efuse: 'INTACT', spare: false, badCells: [] },
+                { id: 1, label: 'Sector 1', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [1, 4] },
+                { id: 2, label: 'Sector 2', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [0, 3] },
+                { id: 3, label: 'Sector 3', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [2, 5] },
+                { id: 4, label: 'Sector 7', status: 'UNCHECKED', efuse: 'INTACT', spare: false, badCells: [1, 2] },
+            ];
+
+            // Reset UI components
+            renderCellsGrid();
+            updateUI();
+
+            // Reset UI Layer Badges & Metrics
+            document.getElementById('btn-auto-run').classList.remove('opacity-50', 'cursor-not-allowed');
+            document.getElementById('metric-dlock').className = "font-bold text-slate-500 flex items-center gap-1.5";
+            document.getElementById('metric-dlock').innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500 inline-block"></span> 未鎖定`;
+            document.getElementById('metric-temp').innerText = "38.5 °C";
+            document.getElementById('metric-load').innerText = "0 %";
+            document.getElementById('metric-yield').innerText = "1 / 5";
+            document.getElementById('metric-status').innerText = "STANDBY";
+            document.getElementById('metric-status').className = "font-bold text-cyber-green";
+
+            document.getElementById('coap-packet-status').innerText = "靜態等待指令 (IDLE)";
+            document.getElementById('sig-val').innerText = "N/A";
+            document.getElementById('animated-packet').style.left = "-100%";
+
+            // Reset Layer Board Cards Highlights
+            resetLayerCardHighlights();
+
+            // Reset Sector tags & eFuse UI
+            for (let i = 0; i < totalSectors; i++) {
+                const tag = document.getElementById(`sec-tag-${i}`);
+                if (i === 0) {
+                    tag.innerText = "NORMAL";
+                    tag.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyber-green/20 text-cyber-green";
+                } else {
+                    tag.innerText = "UNCHECKED";
+                    tag.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400";
+                }
+                document.getElementById(`efuse-${i}`).innerText = "INTACT";
+                document.getElementById(`efuse-${i}`).className = "text-slate-400";
+                document.getElementById(`spare-${i}`).innerText = "OFF";
+                document.getElementById(`spare-${i}`).className = "text-slate-500";
+            }
+
+            document.getElementById('current-step-title').innerText = "當前階段: 0 - 系統待命 (IDLE)";
+            document.getElementById('current-step-desc').innerText = "點擊「啟動自動流程」或「逐步執行」開始執行完整的 IoT 測試與自我修復程序。";
+
+            logTerminal("SYSTEM_RESET", "模擬系統已重設為初始狀態。", "info");
+        }
+
+        function resetLayerCardHighlights() {
+            const layers = ['system', 'iot', 'firmware', 'test', 'device', 'storage'];
+            layers.forEach(l => {
+                const card = document.getElementById(`layer-card-${l}`);
+                const dot = document.getElementById(`dot-${l}`);
+                card.classList.remove('glass-panel-active', 'border-cyber-cyan');
+                dot.className = "w-2 h-2 rounded-full bg-slate-600";
+            });
+        }
+
+        function highlightLayer(layerName) {
+            resetLayerCardHighlights();
+            const card = document.getElementById(`layer-card-${layerName}`);
+            const dot = document.getElementById(`dot-${layerName}`);
+            if (card && dot) {
+                card.classList.add('glass-panel-active', 'border-cyber-cyan');
+                dot.className = "w-2 h-2 rounded-full bg-cyber-cyan led-indicator";
+            }
+        }
+
+        // --- STEP IMPLEMENTATION FUNCTIONS ---
+
+        // STEP 1: CoAP Packet Receive & Signature
+        function step1_CoAPReceive() {
+            highlightLayer('iot');
+            eventCount++;
+            
+            const sig = "0x" + Math.floor(Math.random()*0xFFFFFF).toString(16).toUpperCase();
+            
+            document.getElementById('iot-cmd').innerText = "urge-coap";
+            document.getElementById('iot-cmd').className = "text-cyber-cyan font-bold";
+            document.getElementById('iot-sign').innerText = sig;
+            document.getElementById('iot-sign').className = "text-cyber-green font-bold";
+
+            document.getElementById('coap-packet-status').innerText = "收到 urge-coap 測試請求，驗證簽章成功";
+            document.getElementById('sig-val').innerText = sig;
+
+            // Packet animation
+            const packet = document.getElementById('animated-packet');
+            packet.style.left = "0%";
+            setTimeout(() => { packet.style.left = "100%"; }, 800);
+
+            logTerminal("IoTLayer", `[urge-coap] 收到邊緣遠端測試指令 (Port: 0x88F2)`, "info");
+            logTerminal("IoTLayer", `[porting_sign] 路由簽章驗證成功: ${sig}`, "success");
+            
+            document.getElementById('current-step-desc').innerText = "IoTLayer 正成功接收 urge-coap 指令，並完成 porting_sign 加密安全簽章校驗。";
+        }
+
+        // STEP 2: D-Locking Data Lock
+        function step2_DLocking() {
+            highlightLayer('system');
+            dLockEngaged = true;
+
+            document.getElementById('sys-events').innerText = eventCount;
+            document.getElementById('sys-dlock').innerText = "LOCKED";
+            document.getElementById('sys-dlock').className = "text-cyber-amber font-bold";
+
+            document.getElementById('metric-dlock').className = "font-bold text-cyber-amber flex items-center gap-1.5";
+            document.getElementById('metric-dlock').innerHTML = `<span class="w-2 h-2 rounded-full bg-cyber-amber led-indicator inline-block"></span> 鎖定中 (D-Lock)`;
+
+            logTerminal("SystemLayer", `[counting] 事件計數累計: ${eventCount}`, "info");
+            logTerminal("SystemLayer", `[D-locking] 觸發測試前資料強制鎖定，保護記憶體映射`, "warn");
+
+            document.getElementById('current-step-desc').innerText = "SystemLayer 強制啟動 D-locking（測試前鎖定資料），防止並行讀寫干擾測試流程。";
+        }
+
+        // STEP 3: Firmware Stamping & Segmentation
+        function step3_FirmwareStamp() {
+            highlightLayer('firmware');
+
+            const timestamp = Date.now().toString().slice(-8);
+            document.getElementById('fw-stamp').innerText = `TS-${timestamp}`;
+            document.getElementById('fw-stamp').className = "text-cyber-cyan font-bold";
+            document.getElementById('fw-seg').innerText = "SEG_4B_OK";
+            document.getElementById('fw-seg').className = "text-cyber-green";
+            document.getElementById('fw-core').innerText = "DISCLOSED";
+            document.getElementById('fw-core').className = "text-cyber-cyan";
+
+            logTerminal("FirmwareLayer", `[trude-stamp] 時間戳記已掛載: TS-${timestamp}`, "info");
+            logTerminal("FirmwareLayer", `[segmented] 測試封包已進行固定區段分段裝載`, "info");
+            logTerminal("FirmwareLayer", `[disclosed-core] 揭露核心測試暫存器與負載狀態`, "success");
+
+            document.getElementById('current-step-desc').innerText = "FirmwareLayer 加蓋高精度硬體時間戳，分段封裝資料並揭露核心核心狀態。";
+        }
+
+        // STEP 4: Teeth Probe Scan Bad Sectors
+        function step4_ProbeScan() {
+            highlightLayer('test');
+
+            document.getElementById('test-probe').innerText = "SCANNING";
+            document.getElementById('test-probe').className = "text-cyber-amber font-bold animate-pulse";
+
+            // Highlight probed sectors
+            for (let s = 1; s <= 4; s++) {
+                const sectorCard = document.getElementById(`sector-card-${s}`);
+                sectorCard.classList.add('border-cyber-amber');
+                
+                const secState = sectorsState[s];
+                const tag = document.getElementById(`sec-tag-${s}`);
+                tag.innerText = "PROBING";
+                tag.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyber-amber/20 text-cyber-amber animate-pulse";
+
+                // Highlight bad cells in red
+                secState.badCells.forEach(cellIdx => {
+                    const cell = document.getElementById(`cell-${s}-${cellIdx}`);
+                    cell.className = "h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-cyber-red/30 border-cyber-red text-cyber-red animate-pulse";
+                    cell.innerText = "DEFECT";
+                });
+            }
+
+            logTerminal("TestLayer", `[teeth_probe.search] 硬體探針深入實體磁區掃描`, "warn");
+            logTerminal("TestLayer", `[teeth_probe.search] 探針掃出 4 個不良磁區: Sector 1, Sector 2, Sector 3, Sector 7`, "danger");
+
+            document.getElementById('current-step-desc').innerText = "TestLayer 探針 (teeth_probe) 掃描發現 Sector 1、2、3、7 存在實體壞單元！";
+        }
+
+        // STEP 5: Burn-In High Load Stress Test
+        function step5_BurnInStress() {
+            highlightLayer('test');
+            burnInRound = 3;
+
+            document.getElementById('test-burnin').innerText = "3 / 3 FINISHED";
+            document.getElementById('test-burnin').className = "text-cyber-green font-bold";
+            document.getElementById('test-stress').innerText = "HIGH-LOAD PASS";
+            document.getElementById('test-stress').className = "text-cyber-green";
+
+            document.getElementById('metric-temp').innerText = "78.2 °C";
+            document.getElementById('metric-temp').className = "font-bold text-cyber-red";
+            document.getElementById('metric-load').innerText = "100 %";
+            document.getElementById('metric-load').className = "font-bold text-cyber-red";
+
+            logTerminal("TestLayer", `[high-load] 啟動高壓高溫三輪 Burn-in 應力測試...`, "warn");
+            logTerminal("TestLayer", `[high-load] Round 1/3 PASSED (Core Temp: 62°C)`, "info");
+            logTerminal("TestLayer", `[high-load] Round 2/3 PASSED (Core Temp: 74°C)`, "info");
+            logTerminal("TestLayer", `[high-load] Round 3/3 PASSED (Core Temp: 78.2°C). 壞單元邊界已逼出固定。`, "success");
+
+            document.getElementById('current-step-desc').innerText = "TestLayer 完成三輪 high-load burn-in 高負載應力測試，穩定呈現極限壞單元位置。";
+        }
+
+        // STEP 6: Hole Injection & Location Pinpointing
+        function step6_HoleInjection() {
+            highlightLayer('device');
+
+            document.getElementById('dev-hetero').innerText = "ACTIVE";
+            document.getElementById('dev-hetero').className = "text-cyber-purple font-bold";
+            document.getElementById('dev-holes').innerText = "8 Cells Fixed";
+            document.getElementById('dev-holes').className = "text-cyber-purple font-bold";
+
+            for (let s = 1; s <= 4; s++) {
+                const secState = sectorsState[s];
+                secState.badCells.forEach(cellIdx => {
+                    const cell = document.getElementById(`cell-${s}-${cellIdx}`);
+                    cell.className = "h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-cyber-purple/40 border-cyber-purple text-white shadow-[0_0_10px_rgba(176,38,255,0.6)]";
+                    cell.innerText = "HOLE_PUMP";
+                });
+            }
+
+            logTerminal("DeviceLayer", `[heteo_junction] 異質接面電洞注入模組啟動`, "purple");
+            logTerminal("DeviceLayer", `[pumped-holes0] 電洞注入精準計算出壞單元物理座標: S1[1,4], S2[0,3], S3[2,5], S7[1,2]`, "purple");
+
+            document.getElementById('current-step-desc').innerText = "DeviceLayer 利用 pumped-holes0 電洞注入定位，精準算出所有壞單元的物理微結構座標。";
+        }
+
+        // STEP 7: eFuse Blowing & Spare Activation
+        function step7_EFuseBlow() {
+            highlightLayer('device');
+
+            document.getElementById('dev-efuse').innerText = "FUSED & REROUTED";
+            document.getElementById('dev-efuse').className = "text-cyber-green font-bold";
+
+            for (let s = 1; s <= 4; s++) {
+                const secState = sectorsState[s];
+                secState.efuse = "BLOWN";
+                secState.spare = true;
+
+                // Update Sector Card eFuse UI
+                document.getElementById(`efuse-${s}`).innerText = "BLOWN";
+                document.getElementById(`efuse-${s}`).className = "text-cyber-red font-bold";
+                document.getElementById(`spare-${s}`).innerText = "ACTIVE";
+                document.getElementById(`spare-${s}`).className = "text-cyber-green font-bold";
+
+                // Mark bad cells as fused dead, and activate backup cells
+                for (let c = 0; c < cellsPerSector; c++) {
+                    const cell = document.getElementById(`cell-${s}-${c}`);
+                    if (secState.badCells.includes(c)) {
+                        cell.className = "h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-slate-900 border-red-900 text-red-600 line-through";
+                        cell.innerText = "FUSED";
+                    } else {
+                        cell.className = "h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-cyber-green/20 border-cyber-green/60 text-cyber-green";
+                        cell.innerText = "SPARE_ON";
+                    }
+                }
+
+                const tag = document.getElementById(`sec-tag-${s}`);
+                tag.innerText = "REPAIRED";
+                tag.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyber-green/20 text-cyber-green";
+            }
+
+            logTerminal("DeviceLayer", `[deleting-fused] 電壓脈衝啟動！eFuse 電子保險絲物理性熔斷離壞單元...`, "danger");
+            logTerminal("DeviceLayer", `[deleting-fused] 備援晶片單元 (Redundant Spare Units) 成功接管定址！`, "success");
+
+            document.getElementById('current-step-desc').innerText = "DeviceLayer 透過 deleting-fused 燒斷 eFuse 隔離壞單元，並自動掛載備援單元替補！";
+        }
+
+        // STEP 8: Storage Repooling
+        function step8_StoragePool() {
+            highlightLayer('storage');
+
+            document.getElementById('stg-pooled').innerText = "5 / 5 HEALTHY";
+            document.getElementById('stg-pooled').className = "text-cyber-green font-bold";
+            document.getElementById('stg-status').innerText = "RE-ALLOCATED";
+            document.getElementById('stg-status').className = "text-cyber-cyan";
+
+            document.getElementById('metric-yield').innerText = "5 / 5";
+            document.getElementById('metric-yield').className = "font-bold text-cyber-green glow-text-green";
+
+            for (let s = 0; s < totalSectors; s++) {
+                const card = document.getElementById(`sector-card-${s}`);
+                card.classList.remove('border-slate-800', 'border-cyber-amber');
+                card.classList.add('border-cyber-green/50', 'shadow-[0_0_12px_rgba(0,255,136,0.15)]');
+            }
+
+            logTerminal("StorageLayer", `[partitioned-sector] 重新劃分儲存區段陣列`, "info");
+            logTerminal("StorageLayer", `[pooled] 修復完成，良品磁區歸池: 5/5 磁區良品 (100% Repaired)`, "success");
+            logTerminal("StorageLayer", `[occuleased] 佔用與釋出動態記憶體池調整完畢`, "info");
+
+            document.getElementById('current-step-desc').innerText = "StorageLayer 將修復後所有磁區重新池化，對外回報「5/5 磁區良品」狀態！";
+        }
+
+        // STEP 9: Yield Report, System Unlock & Prospensed Pause
+        function step9_CompleteAndPause() {
+            highlightLayer('system');
+
+            dLockEngaged = false;
+            document.getElementById('sys-dlock').innerText = "UNLOCKED";
+            document.getElementById('sys-dlock').className = "text-cyber-green font-bold";
+            document.getElementById('sys-pause').innerText = "PROSPENSED";
+            document.getElementById('sys-pause').className = "text-cyber-amber font-bold";
+
+            document.getElementById('metric-dlock').className = "font-bold text-cyber-green flex items-center gap-1.5";
+            document.getElementById('metric-dlock').innerHTML = `<span class="w-2 h-2 rounded-full bg-cyber-green inline-block"></span> 已解鎖`;
+
+            document.getElementById('metric-temp').innerText = "42.0 °C";
+            document.getElementById('metric-temp').className = "font-bold text-cyber-cyan";
+            document.getElementById('metric-load').innerText = "0 %";
+            document.getElementById('metric-load').className = "font-bold text-slate-400";
+            document.getElementById('metric-status').innerText = "PROSPENSED";
+            document.getElementById('metric-status').className = "font-bold text-cyber-amber";
+
+            logTerminal("SystemLayer", `[system-prospensed] 測試與自我修復程序結束，回傳完整報告`, "success");
+            logTerminal("SystemLayer", `[system-prospensed] 解鎖記憶體，系統進入安全暫停 (System-Prospensed) 狀態。`, "warn");
+
+            document.getElementById('current-step-desc').innerText = "完整自動測試與自我修復流程執行成功！解鎖並切入 system-prospensed 待命狀態。";
+        }
+
+        // --- MANUAL FAULT INJECTION ---
+        function injectRandomFault() {
+            const randomSector = Math.floor(Math.random() * (totalSectors - 1)) + 1; // 1 to 4
+            const randomCell = Math.floor(Math.random() * cellsPerSector);
+
+            if (!sectorsState[randomSector].badCells.includes(randomCell)) {
+                sectorsState[randomSector].badCells.push(randomCell);
+            }
+
+            const cell = document.getElementById(`cell-${randomSector}-${randomCell}`);
+            cell.className = "h-6 rounded flex items-center justify-center font-mono text-[10px] font-bold border transition-all duration-300 bg-cyber-red/40 border-cyber-red text-cyber-red animate-bounce";
+            cell.innerText = "INJECTED";
+
+            logTerminal("FAULT_INJECT", `使用者手動於 Sector ${randomSector === 4 ? 7 : randomSector} [Cell C${randomCell}] 注入新硬體故障！`, "danger");
+        }
+
+        function updateUI() {
+            document.getElementById('sys-events').innerText = eventCount;
+        }
+    </script>
+</body>
+</html>

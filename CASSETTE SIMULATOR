@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEGIS-CASSETTE M0 零信任無接點邊緣運算卡匣模擬器</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #04070f;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .font-mono-code {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .glass-panel {
+      background: rgba(13, 21, 38, 0.84);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+    }
+    .breached-glow {
+      border-color: rgba(244, 63, 94, 0.85) !important;
+      box-shadow: 0 0 28px rgba(244, 63, 94, 0.45) !important;
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      background: rgba(30, 41, 59, 0.95);
+      height: 6px;
+      border-radius: 4px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
+    }
+    .scanline-overlay {
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%);
+      background-size: 100% 4px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col relative">
+  <div class="fixed inset-0 scanline-overlay z-50"></div>
+
+  <!-- Top Status Bar -->
+  <header id="main-header" class="glass-panel border-b border-cyan-500/30 px-5 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 transition-all duration-300">
+    <div class="flex items-center gap-3">
+      <div id="status-dot" class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></div>
+      <div>
+        <h1 class="text-base md:text-lg font-bold tracking-wide text-cyan-300">
+          AEGIS-CASSETTE M0 <span class="text-xs font-mono-code text-slate-400 ml-1">// 零信任無接點邊緣運算卡匣模擬器</span>
+        </h1>
+        <p class="text-[11px] font-mono-code text-slate-400">
+          Rust Core Twin: CoatIdEngine • AsymmetricScheduler7To1 • CashPortalLedger
+        </p>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 text-xs font-mono-code">
+      <div class="px-3 py-1.5 rounded bg-slate-900/90 border border-cyan-500/40">
+        <span class="text-slate-400">超級電容 SOC:</span>
+        <span id="hdr-soc" class="text-cyan-300 font-bold ml-1">95%</span>
+      </div>
+      <div class="px-3 py-1.5 rounded bg-slate-900/90 border border-amber-500/40">
+        <span class="text-slate-400">Cash-Portal 餘額:</span>
+        <span id="hdr-credits" class="text-amber-300 font-bold ml-1">10,000 uCR</span>
+      </div>
+      <div id="hdr-seal-box" class="px-3 py-1.5 rounded bg-slate-900/90 border border-emerald-500/50">
+        <span class="text-slate-400">Coat-ID 狀態:</span>
+        <span id="hdr-seal" class="text-emerald-400 font-bold ml-1">BOUND (HD: 2-bit)</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace Grid -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 max-w-[1680px] w-full mx-auto z-10">
+
+    <!-- Left Column: Coat-ID Security Engine & Power Supply (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col gap-4">
+      <!-- Coat-ID PUF Attestation Engine -->
+      <div id="panel-security" class="glass-panel rounded-xl p-4 transition-all duration-300">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+            <span>🛡️</span> CoatIdEngine (PUF 零信任防篡改)
+          </h2>
+          <span id="badge-puf" class="text-[10px] font-mono-code px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">INTACT</span>
+        </div>
+
+        <p class="text-[11px] text-slate-400 leading-relaxed mb-3">
+          即時比對 512-bit 奈米塗層物理指紋。漢明距離閾值 <code class="text-cyan-300">&le; 4 bits</code> 容許環境熱雜訊，超過即觸發雪崩熔斷並銷毀 SessionKey。
+        </p>
+
+        <!-- 64-byte Hex Fingerprint Matrix Visualizer -->
+        <div class="bg-slate-950/90 border border-slate-800 rounded-lg p-2.5 font-mono-code text-[10px] mb-3">
+          <div class="flex justify-between text-slate-500 mb-1">
+            <span>LIVE_PUF_SAMPLE (512-BIT)</span>
+            <span id="puf-hd-text" class="text-emerald-400 font-bold">Hamming Dist: 2 / 4</span>
+          </div>
+          <div id="puf-hex-grid" class="grid grid-cols-8 gap-1 text-center text-cyan-300">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <div class="bg-slate-950/90 border border-slate-800 rounded-lg p-2.5 font-mono-code text-[10px] mb-3">
+          <div class="text-slate-500 mb-0.5">ACTIVE_SESSION_KEY (HMAC-SHA3)</div>
+          <div id="session-key-display" class="text-emerald-400 truncate">0x8F4C92E1B703A6D5...91E4C02B</div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-attest" class="py-2 px-2.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-200 text-xs font-bold transition">
+            🔄 重新掃描證明
+          </button>
+          <button id="btn-tamper" class="py-2 px-2.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-xs font-bold transition">
+            💥 模擬外殼鑽孔
+          </button>
+        </div>
+        <button id="btn-factory-reset" class="w-full mt-2 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[11px] font-mono-code transition hidden">
+          🔧 執行工廠 HSM 熔絲重置 (Factory Reset)
+        </button>
+      </div>
+
+      <!-- Contactless Power & Drought Control (`u-drought_sup-calc`) -->
+      <div class="glass-panel rounded-xl p-4 space-y-3 text-xs">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+            <span>⚡</span> 無接點磁共振與微枯竭補償
+          </h2>
+          <span id="badge-power" class="text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300">120W COUPLED</span>
+        </div>
+
+        <div>
+          <div class="flex justify-between mb-1">
+            <span class="text-slate-300">超級電容儲能電量 (<span class="font-mono-code text-cyan-400">SOC</span>)</span>
+            <span id="val-soc" class="font-mono-code text-cyan-300 font-bold">95%</span>
+          </div>
+          <input type="range" id="slider-soc" min="10" max="100" step="1" value="95" class="w-full">
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono-code">
+            <span>&lt;20% 枯竭鎖死</span>
+            <span>&lt;35% 自動降載</span>
+            <span>100% 滿載</span>
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded bg-slate-950/80 border border-slate-800 font-mono-code text-[11px] flex justify-between items-center">
+          <span class="text-slate-400">6.78MHz 耦合效率:</span>
+          <span id="coil-eff" class="text-emerald-400 font-bold">89.4% (107.3 W)</span>
+        </div>
+      </div>
+
+      <!-- Cash-Portal Micro-Settlement Ledger -->
+      <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+              <span>💳</span> CashPortalLedger 算力結算
+            </h2>
+            <span id="ledger-seq" class="text-[10px] font-mono-code text-slate-400">SEQ #0</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mb-3 font-mono-code text-[11px]">
+            <div class="bg-slate-950/80 p-2 rounded border border-slate-800">
+              <div class="text-slate-500 text-[10px]">可用算力信用</div>
+              <div id="ledger-bal" class="text-amber-300 font-bold text-sm">10,000</div>
+            </div>
+            <div class="bg-slate-950/80 p-2 rounded border border-slate-800">
+              <div class="text-slate-500 text-[10px]">累計結算筆數</div>
+              <div id="ledger-tx-count" class="text-cyan-300 font-bold text-sm">0 TXs</div>
+            </div>
+          </div>
+        </div>
+        <button id="btn-topup" class="w-full py-2 px-3 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-500/50 text-amber-200 text-xs font-bold transition">
+          ➕ 儲值 +5,000 uCR 算力信用
+        </button>
+      </div>
+    </section>
+
+    <!-- Center Column: 3D Cassette Twin & 7:1 Node Matrix (6 Cols) -->
+    <section class="lg:col-span-6 flex flex-col gap-4">
+      <!-- 3D WebGL Digital Twin -->
+      <div class="glass-panel rounded-xl p-4 flex flex-col relative overflow-hidden min-h-[370px]">
+        <div class="flex items-center justify-between mb-2 z-20">
+          <div>
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <span>🧊</span> AEGIS-CASSETTE M0 內部 3D 架構透視
+            </h2>
+            <p class="text-[11px] text-slate-400">拖曳旋轉檢視：底部磁共振供電線圈 • 7:1 非對稱晶片組 • 表面 Coat-ID 防偽塗層護罩</p>
+          </div>
+          <span class="text-[10px] font-mono-code px-2 py-1 rounded bg-slate-900 border border-slate-700 text-cyan-300">IP68 SEALED</span>
+        </div>
+
+        <div id="webgl-cassette" class="flex-1 w-full rounded-lg overflow-hidden border border-slate-800 bg-[#03050c] relative min-h-[290px]">
+          <div class="absolute bottom-2.5 left-2.5 z-20 bg-slate-950/80 backdrop-blur-sm border border-slate-800 rounded p-2 text-[10px] font-mono-code space-y-1 pointer-events-none">
+            <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span> Master Core (RISC-V 雙核鎖步主控)</div>
+            <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-cyan-400 inline-block"></span> 7x NPU 子節點 (點擊下方卡片可隔離故障)</div>
+            <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> 6.78MHz 無接點磁共振線圈</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7:1 Asymmetric Paired Node Array & Job Dispatcher -->
+      <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+              <span>🧠</span> AsymmetricScheduler7To1 (切線極值負載調度陣列)
+            </h2>
+            <p class="text-[11px] text-slate-400">點擊任一 NPU 子節點 (N0–N6) 可手動切換「正常 / 故障隔離 (`targeting-partial_issue`)」</p>
+          </div>
+          <div class="text-xs font-mono-code bg-slate-900 px-2.5 py-1 rounded border border-emerald-500/40">
+            Master 主控負載: <span id="master-load" class="text-emerald-400 font-bold">12%</span>
+          </div>
+        </div>
+
+        <!-- 7 Sub-Nodes Grid -->
+        <div id="nodes-grid" class="grid grid-cols-7 gap-2 mb-4">
+          <!-- Populated dynamically by JS -->
+        </div>
+
+        <!-- Comet-Track Priority Job Dispatch Buttons -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <button data-priority="PeriapsisCritical" class="btn-dispatch py-2.5 px-3 rounded-lg bg-rose-950/75 hover:bg-rose-900 border border-rose-500/60 text-rose-200 text-xs font-bold transition flex flex-col items-center">
+            <span>☄️ 近地點緊急推論 (1.5x 費率)</span>
+            <span class="text-[10px] font-mono-code text-rose-300/80 mt-0.5">Load +25% | 150 uCR | 抗枯竭豁免</span>
+          </button>
+
+          <button data-priority="StandardOrbit" class="btn-dispatch py-2.5 px-3 rounded-lg bg-cyan-950/75 hover:bg-cyan-900 border border-cyan-500/60 text-cyan-200 text-xs font-bold transition flex flex-col items-center">
+            <span>🛰️ 標準軌道推論 (1.0x 費率)</span>
+            <span class="text-[10px] font-mono-code text-cyan-300/80 mt-0.5">Load +20% | 100 uCR</span>
+          </button>
+
+          <button data-priority="ApoapsisBatch" class="btn-dispatch py-2.5 px-3 rounded-lg bg-indigo-950/75 hover:bg-indigo-900 border border-indigo-500/60 text-indigo-200 text-xs font-bold transition flex flex-col items-center">
+            <span>📦 遠地點批次訓練 (0.8x 折扣)</span>
+            <span class="text-[10px] font-mono-code text-indigo-300/80 mt-0.5">Load +15% | 80 uCR</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Real-Time Telemetry & Settlement Receipts (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col gap-4">
+      <!-- Load & Power Chart -->
+      <div class="glass-panel rounded-xl p-4">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-2 flex items-center gap-1.5">
+          <span>📊</span> 7:1 算力吞吐與主控開銷比
+        </h2>
+        <div class="h-40 w-full">
+          <canvas id="loadChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Cryptographic Settlement Receipts Feed -->
+      <div class="glass-panel rounded-xl p-4 flex-1 flex flex-col min-h-[300px]">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+            <span>🧾</span> 零信任執行與結算收據流
+          </h2>
+          <button id="btn-clear-feed" class="text-[11px] text-slate-500 hover:text-slate-300">清除</button>
+        </div>
+        <div id="receipt-feed" class="flex-1 overflow-y-auto font-mono-code text-[11px] space-y-2 max-h-[380px] pr-1">
+          <!-- Receipts injected by JS -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // =====================================================================
+      // 1. Rust Core Logic Ported to JS State Machine
+      // =====================================================================
+      const BASELINE_PUF = Array.from({ length: 64 }, (_, i) => (0xA5 ^ (i * 13)) & 0xFF);
+
+      const cassette = {
+        security: {
+          baseline: [...BASELINE_PUF],
+          liveSample: [...BASELINE_PUF],
+          sealIntact: true,
+          sessionKey: '8F4C92E1B703A6D54410F98A91E4C02B',
+          hammingDist: 2
+        },
+        scheduler: {
+          masterLoad: 12,
+          supercapSoc: 95,
+          subNodes: Array.from({ length: 7 }, (_, i) => ({
+            id: i,
+            load: 10 + (i % 3) * 5,
+            temp: 42 + (i % 2) * 2,
+            health: 'Online' // 'Online' | 'Throttled' | 'Isolated'
+          }))
+        },
+        ledger: {
+          balance: 10000,
+          sequence: 0,
+          txCount: 0
+        }
+      };
+
+      // Simulate minor 2-bit thermal noise on boot
+      cassette.security.liveSample[0] ^= 0b00000011;
+
+      function computeHammingDistance(a, b) {
+        let dist = 0;
+        for (let i = 0; i < a.length; i++) {
+          let xor = a[i] ^ b[i];
+          while (xor > 0) {
+            dist += xor & 1;
+            xor >>= 1;
+          }
+        }
+        return dist;
+      }
+
+      // =====================================================================
+      // 2. UI Rendering & Receipt Logging
+      // =====================================================================
+      const receiptFeed = document.getElementById('receipt-feed');
+
+      function pushLog(title, detail, type = 'info') {
+        const now = new Date();
+        const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        const styles = {
+          success: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300',
+          warn: 'border-amber-500/40 bg-amber-950/30 text-amber-300',
+          danger: 'border-rose-500/60 bg-rose-950/50 text-rose-300',
+          info: 'border-slate-700 bg-slate-900/70 text-cyan-300'
+        };
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-lg border ${styles[type] || styles.info} leading-snug`;
+        card.innerHTML = `
+          <div class="flex justify-between text-[10px] opacity-75 mb-0.5">
+            <span>${title}</span>
+            <span>${ts}</span>
+          </div>
+          <div class="text-[11px] text-slate-200">${detail}</div>
+        `;
+        receiptFeed.prepend(card);
+        if (receiptFeed.children.length > 25) {
+          receiptFeed.removeChild(receiptFeed.lastChild);
+        }
+      }
+
+      function renderPufMatrix() {
+        const grid = document.getElementById('puf-hex-grid');
+        grid.innerHTML = '';
+        // Display first 16 bytes as representative hex grid
+        for (let i = 0; i < 16; i++) {
+          const byte = cassette.security.liveSample[i];
+          const diff = byte !== cassette.security.baseline[i];
+          const cell = document.createElement('div');
+          cell.className = `py-0.5 rounded ${
+            !cassette.security.sealIntact
+              ? 'bg-rose-950 text-rose-400'
+              : diff
+              ? 'bg-amber-950/80 text-amber-300'
+              : 'bg-slate-900 text-cyan-300'
+          }`;
+          cell.textContent = byte.toString(16).toUpperCase().padStart(2, '0');
+          grid.appendChild(cell);
+        }
+
+        const hd = computeHammingDistance(cassette.security.baseline, cassette.security.liveSample);
+        cassette.security.hammingDist = hd;
+        const hdText = document.getElementById('puf-hd-text');
+        hdText.textContent = `Hamming Dist: ${hd} / 4`;
+        hdText.className = hd > 4 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold';
+      }
+
+      function renderNodes() {
+        const grid = document.getElementById('nodes-grid');
+        grid.innerHTML = '';
+
+        cassette.scheduler.subNodes.forEach((node, idx) => {
+          const isIso = node.health === 'Isolated';
+          const isThr = node.health === 'Throttled';
+
+          const card = document.createElement('div');
+          card.className = `cursor-pointer rounded-lg p-2 border text-center transition select-none ${
+            isIso
+              ? 'bg-rose-950/40 border-rose-500/60 opacity-70'
+              : isThr
+              ? 'bg-amber-950/40 border-amber-500/50'
+              : 'bg-slate-900/90 border-cyan-500/40 hover:border-cyan-300'
+          }`;
+
+          const statusLabel = isIso ? 'ISO' : isThr ? 'LOW' : 'OK';
+          const statusColor = isIso ? 'text-rose-400' : isThr ? 'text-amber-300' : 'text-emerald-400';
+
+          card.innerHTML = `
+            <div class="flex justify-between items-center text-[10px] font-mono-code">
+              <span class="font-bold text-white">N${node.id}</span>
+              <span class="${statusColor} font-bold">${statusLabel}</span>
+            </div>
+            <div class="my-1.5 text-sm font-mono-code font-bold ${isIso ? 'text-rose-400' : 'text-cyan-300'}">
+              ${isIso ? 'ERR' : node.load + '%'}
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full ${isIso ? 'bg-rose-500' : 'bg-cyan-400'} transition-all" style="width: ${isIso ? 100 : node.load}%"></div>
+            </div>
+            <div class="mt-1 text-[9px] font-mono-code text-slate-400">${node.temp}°C</div>
+          `;
+
+          card.addEventListener('click', () => {
+            if (node.health === 'Isolated') {
+              node.health = cassette.scheduler.supercapSoc < 35 ? 'Throttled' : 'Online';
+              node.load = 10;
+              pushLog(`NODE_RECOVERY // N${node.id}`, `子節點 N${node.id} 已解除隔離並重新併入 7:1 調度網格。`, 'success');
+            } else {
+              node.health = 'Isolated';
+              node.load = 0;
+              pushLog(`PARTIAL_ISSUE_ISOLATION // N${node.id}`, `觸發 targeting-partial_issue：異常子節點 N${node.id} 已硬體隔離。`, 'warn');
+            }
+            update3DNodes();
+            renderNodes();
+          });
+
+          grid.appendChild(card);
+        });
+
+        document.getElementById('master-load').textContent = `${cassette.scheduler.masterLoad}%`;
+      }
+
+      function syncHeaderAndLedger() {
+        document.getElementById('hdr-soc').textContent = `${cassette.scheduler.supercapSoc}%`;
+        document.getElementById('hdr-credits').textContent = `${cassette.ledger.balance.toLocaleString()} uCR`;
+        document.getElementById('ledger-bal').textContent = cassette.ledger.balance.toLocaleString();
+        document.getElementById('ledger-seq').textContent = `SEQ #${cassette.ledger.sequence}`;
+        document.getElementById('ledger-tx-count').textContent = `${cassette.ledger.txCount} TXs`;
+      }
+
+      // =====================================================================
+      // 3. Security Attestation & Tamper Simulation
+      // =====================================================================
+      document.getElementById('btn-attest').addEventListener('click', () => {
+        if (!cassette.security.sealIntact) {
+          pushLog('ATTEST_REJECTED', '主動防篡改封條已熔斷！請先執行工廠 HSM 熔絲重置。', 'danger');
+          return;
+        }
+        // Generate slight 1-3 bit natural thermal jitter
+        cassette.security.liveSample = [...cassette.security.baseline];
+        const bitFlip = Math.floor(Math.random() * 3);
+        cassette.security.liveSample[0] ^= (1 << bitFlip);
+
+        const newKey = Array.from({ length: 16 }, () =>
+          Math.floor(Math.random() * 256).toString(16).toUpperCase().padStart(2, '0')
+        ).join('');
+        cassette.security.sessionKey = newKey;
+
+        renderPufMatrix();
+        document.getElementById('session-key-display').textContent = `0x${newKey.slice(0, 16)}...${newKey.slice(-8)}`;
+        document.getElementById('hdr-seal').textContent = `BOUND (HD: ${cassette.security.hammingDist}-bit)`;
+        pushLog('COAT_ID_ATTESTED', `物理塗層 PUF 遠端證明通過 (HD=${cassette.security.hammingDist} bits)，工作階段金鑰已輪換。`, 'success');
+      });
+
+      document.getElementById('btn-tamper').addEventListener('click', () => {
+        if (!cassette.security.sealIntact) return;
+        // Corrupt multiple bytes -> avalanche effect
+        cassette.security.liveSample[2] ^= 0xFF;
+        cassette.security.liveSample[5] ^= 0xF0;
+        cassette.security.sealIntact = false;
+        cassette.security.sessionKey = null;
+
+        renderPufMatrix();
+        document.getElementById('session-key-display').textContent = '0x0000000000000000 [ZEROIZED]';
+        document.getElementById('badge-puf').textContent = 'BREACHED';
+        document.getElementById('badge-puf').className = 'text-[10px] font-mono-code px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500 animate-pulse';
+
+        document.getElementById('hdr-seal').textContent = 'BREACHED / LOCKED';
+        document.getElementById('hdr-seal').className = 'text-rose-400 font-bold ml-1';
+        document.getElementById('hdr-seal-box').className = 'px-3 py-1.5 rounded bg-rose-950/90 border border-rose-500';
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-rose-500 animate-ping';
+        document.getElementById('panel-security').classList.add('breached-glow');
+        document.getElementById('btn-factory-reset').classList.remove('hidden');
+
+        // Turn 3D shield red
+        if (coatShieldMat) coatShieldMat.color.setHex(0xf43f5e);
+
+        pushLog('TAMPER_SEAL_BREACHED', `偵測到外殼物理破壞 (HD=${cassette.security.hammingDist} > 4)！安全晶片已於 10μs 內銷毀所有金鑰並鎖死運算核心。`, 'danger');
+      });
+
+      document.getElementById('btn-factory-reset').addEventListener('click', () => {
+        cassette.security.liveSample = [...cassette.security.baseline];
+        cassette.security.liveSample[0] ^= 0b00000011;
+        cassette.security.sealIntact = true;
+        cassette.security.sessionKey = '8F4C92E1B703A6D54410F98A91E4C02B';
+
+        renderPufMatrix();
+        document.getElementById('session-key-display').textContent = '0x8F4C92E1B703A6D5...91E4C02B';
+        document.getElementById('badge-puf').textContent = 'INTACT';
+        document.getElementById('badge-puf').className = 'text-[10px] font-mono-code px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40';
+
+        document.getElementById('hdr-seal').textContent = 'BOUND (HD: 2-bit)';
+        document.getElementById('hdr-seal').className = 'text-emerald-400 font-bold ml-1';
+        document.getElementById('hdr-seal-box').className = 'px-3 py-1.5 rounded bg-slate-900/90 border border-emerald-500/50';
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-emerald-400 animate-ping';
+        document.getElementById('panel-security').classList.remove('breached-glow');
+        document.getElementById('btn-factory-reset').classList.add('hidden');
+
+        if (coatShieldMat) coatShieldMat.color.setHex(0x38bdf8);
+        pushLog('HSM_FACTORY_RESET', 'HSM 熔絲基準指紋已重新註冊，零信任安全通道恢復運作。', 'success');
+      });
+
+      // =====================================================================
+      // 4. Power & Drought Slider
+      // =====================================================================
+      const sliderSoc = document.getElementById('slider-soc');
+      sliderSoc.addEventListener('input', () => {
+        const soc = parseInt(sliderSoc.value, 10);
+        cassette.scheduler.supercapSoc = soc;
+        document.getElementById('val-soc').textContent = `${soc}%`;
+
+        const badgePower = document.getElementById('badge-power');
+        if (soc < 20) {
+          badgePower.textContent = 'DROUGHT CRITICAL';
+          badgePower.className = 'text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 animate-pulse';
+        } else if (soc < 35) {
+          badgePower.textContent = 'THROTTLED';
+          badgePower.className = 'text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-amber-950 text-amber-300';
+        } else {
+          badgePower.textContent = '120W COUPLED';
+          badgePower.className = 'text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300';
+        }
+
+        cassette.scheduler.subNodes.forEach(n => {
+          if (n.health !== 'Isolated') {
+            n.health = soc < 35 ? 'Throttled' : 'Online';
+          }
+        });
+
+        renderNodes();
+        syncHeaderAndLedger();
+      });
+
+      // =====================================================================
+      // 5. Execute Zero-Trust Job (`execute_zero_trust_job`)
+      // =====================================================================
+      document.querySelectorAll('.btn-dispatch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const priority = btn.getAttribute('data-priority');
+
+          // Step 1: Security Check
+          if (!cassette.security.sealIntact || !cassette.security.sessionKey) {
+            pushLog('ERR::UnboundSession', '拒絕執行：Coat-ID 安全工作階段未綁定或已熔斷。', 'danger');
+            return;
+          }
+
+          // Step 2: Energy Drought Check
+          if (cassette.scheduler.supercapSoc < 20 && priority !== 'PeriapsisCritical') {
+            pushLog('ERR::EnergyDroughtCritical', `超級電容電量過低 (${cassette.scheduler.supercapSoc}%)，僅允許近地點緊急任務。`, 'warn');
+            return;
+          }
+
+          // Step 3: Tangent Summit Node Selection
+          const loadMap = { PeriapsisCritical: 25, StandardOrbit: 20, ApoapsisBatch: 15 };
+          const costMap = { PeriapsisCritical: 150, StandardOrbit: 100, ApoapsisBatch: 80 };
+          const reqLoad = loadMap[priority];
+          const reqCost = costMap[priority];
+
+          if (cassette.ledger.balance < reqCost) {
+            pushLog('ERR::InsufficientCredits', 'Cash-Portal 算力信用餘額不足，請先儲值。', 'warn');
+            return;
+          }
+
+          let bestNode = null;
+          let minCost = Infinity;
+          cassette.scheduler.subNodes.forEach(n => {
+            if (n.health === 'Isolated') return;
+            if (n.health === 'Throttled' && priority === 'ApoapsisBatch') return;
+            if (n.load + reqLoad > 95) return;
+            const score = n.load * 2 + Math.max(0, n.temp - 50);
+            if (score < minCost) {
+              minCost = score;
+              bestNode = n;
+            }
+          });
+
+          if (!bestNode) {
+            pushLog('ERR::NoAvailableSubNode', '7:1 陣列無可用子節點（全數滿載或隔離中）。', 'warn');
+            return;
+          }
+
+          // Apply dispatch & settle
+          bestNode.load = Math.min(95, bestNode.load + reqLoad);
+          bestNode.temp += Math.floor(reqLoad / 8);
+          cassette.scheduler.masterLoad = Math.min(100, cassette.scheduler.masterLoad + 1);
+
+          cassette.ledger.balance -= reqCost;
+          cassette.ledger.sequence += 1;
+          cassette.ledger.txCount += 1;
+
+          const macHex = Math.floor(0x10000000 + Math.random() * 0x8FFFFFFF).toString(16).toUpperCase();
+
+          pushLog(
+            `RECEIPT #${cassette.ledger.sequence} ➔ Node N${bestNode.id}`,
+            `[${priority}] 扣款 <b>${reqCost} uCR</b> | 餘額 ${cassette.ledger.balance} | MAC: 0x${macHex}`,
+            'success'
+          );
+
+          pulseNode3D(bestNode.id);
+          renderNodes();
+          syncHeaderAndLedger();
+        });
+      });
+
+      document.getElementById('btn-topup').addEventListener('click', () => {
+        cassette.ledger.balance += 5000;
+        syncHeaderAndLedger();
+        pushLog('CASH_PORTAL_TOPUP', '狀態通道已儲值 +5,000 uCR 算力信用額度。', 'info');
+      });
+
+      document.getElementById('btn-clear-feed').addEventListener('click', () => {
+        receiptFeed.innerHTML = '';
+      });
+
+      // Natural cooling & load decay tick
+      setInterval(() => {
+        let totalSubLoad = 0;
+        cassette.scheduler.subNodes.forEach(n => {
+          if (n.health !== 'Isolated') {
+            n.load = Math.max(8, n.load - 3);
+            n.temp = Math.max(40, n.temp - 1);
+            totalSubLoad += n.load;
+          }
+        });
+        cassette.scheduler.masterLoad = Math.max(10, cassette.scheduler.masterLoad - 1);
+        renderNodes();
+
+        // Update chart
+        const avgSub = Math.round(totalSubLoad / 7);
+        subLoadHistory.push(avgSub);
+        subLoadHistory.shift();
+        masterLoadHistory.push(cassette.scheduler.masterLoad);
+        masterLoadHistory.shift();
+        loadChart.update();
+      }, 1500);
+
+      // =====================================================================
+      // 6. Chart.js Telemetry
+      // =====================================================================
+      const subLoadHistory = Array.from({ length: 16 }, () => 18);
+      const masterLoadHistory = Array.from({ length: 16 }, () => 12);
+      const loadChart = new Chart(document.getElementById('loadChart').getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: Array.from({ length: 16 }, (_, i) => i),
+          datasets: [
+            {
+              label: '7x NPU 平均負載 (%)',
+              data: subLoadHistory,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.15)',
+              fill: true,
+              tension: 0.35,
+              pointRadius: 0
+            },
+            {
+              label: '1x Master 主控開銷 (%)',
+              data: masterLoadHistory,
+              borderColor: '#10b981',
+              borderDash: [4, 4],
+              tension: 0.35,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { display: false },
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: 'rgba(148, 163, 184, 0.12)' },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', font: { size: 10 }, boxWidth: 10 } }
+          }
+        }
+      });
+
+      // =====================================================================
+      // 7. Three.js 3D Cassette Hardware Twin
+      // =====================================================================
+      const container = document.getElementById('webgl-cassette');
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+      camera.position.set(0, 6.2, 8.2);
+      camera.lookAt(0, 0, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      scene.add(new THREE.AmbientLight(0x38bdf8, 0.75));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+      dirLight.position.set(5, 10, 7);
+      scene.add(dirLight);
+
+      const cassetteGroup = new THREE.Group();
+      scene.add(cassetteGroup);
+
+      // PCB Substrate
+      const pcbGeo = new THREE.BoxGeometry(6.2, 0.18, 4.0);
+      const pcbMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
+      const pcbMesh = new THREE.Mesh(pcbGeo, pcbMat);
+      cassetteGroup.add(pcbMesh);
+
+      // Wireless Power Induction Coil (Bottom Ring)
+      const coilGeo = new THREE.TorusGeometry(1.5, 0.08, 16, 48);
+      const coilMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+      const coilMesh = new THREE.Mesh(coilGeo, coilMat);
+      coilMesh.rotation.x = Math.PI / 2;
+      coilMesh.position.y = -0.22;
+      cassetteGroup.add(coilMesh);
+
+      // Master Core (Center Emerald Chip)
+      const masterChipGeo = new THREE.BoxGeometry(1.1, 0.28, 1.1);
+      const masterChipMat = new THREE.MeshStandardMaterial({
+        color: 0x10b981,
+        emissive: 0x059669,
+        emissiveIntensity: 0.6
+      });
+      const masterChip = new THREE.Mesh(masterChipGeo, masterChipMat);
+      masterChip.position.set(0, 0.22, 0);
+      cassetteGroup.add(masterChip);
+
+      // 7 Sub-Node NPU Chips arranged around Master Core
+      const nodeMeshes = [];
+      const positions7 = [
+        [-2.0, -1.1], [0, -1.35], [2.0, -1.1],
+        [-2.1, 0.9], [-0.7, 1.3], [0.7, 1.3], [2.1, 0.9]
+      ];
+      positions7.forEach(([x, z], idx) => {
+        const geo = new THREE.BoxGeometry(0.68, 0.22, 0.68);
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.5
+        });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, 0.2, z);
+        cassetteGroup.add(m);
+        nodeMeshes.push(m);
+      });
+
+      // Outer Coat-ID PUF Wireframe Casing
+      const casingGeo = new THREE.BoxGeometry(6.6, 0.85, 4.4);
+      const coatShieldMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.25
+      });
+      const casingMesh = new THREE.Mesh(casingGeo, coatShieldMat);
+      casingMesh.position.y = 0.1;
+      cassetteGroup.add(casingMesh);
+
+      function update3DNodes() {
+        cassette.scheduler.subNodes.forEach((n, idx) => {
+          const mat = nodeMeshes[idx].material;
+          if (n.health === 'Isolated') {
+            mat.color.setHex(0xf43f5e);
+            mat.emissive.setHex(0xe11d48);
+          } else if (n.health === 'Throttled') {
+            mat.color.setHex(0xf59e0b);
+            mat.emissive.setHex(0xd97706);
+          } else {
+            mat.color.setHex(0x38bdf8);
+            mat.emissive.setHex(0x0284c7);
+          }
+        });
+      }
+
+      function pulseNode3D(idx) {
+        const m = nodeMeshes[idx];
+        if (!m) return;
+        m.scale.set(1.3, 1.8, 1.3);
+        setTimeout(() => m.scale.set(1, 1, 1), 350);
+      }
+
+      // Mouse drag rotation
+      let dragging = false;
+      let prev = { x: 0, y: 0 };
+      let rotY = 0.25;
+      let rotX = 0.1;
+
+      renderer.domElement.addEventListener('mousedown', e => {
+        dragging = true;
+        prev = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('mouseup', () => { dragging = false; });
+      window.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        rotY += (e.clientX - prev.x) * 0.008;
+        rotX = Math.max(-0.5, Math.min(0.6, rotX + (e.clientY - prev.y) * 0.008));
+        prev = { x: e.clientX, y: e.clientY };
+      });
+
+      function animate() {
+        requestAnimationFrame(animate);
+        if (!dragging) rotY += 0.003;
+        cassetteGroup.rotation.y += (rotY - cassetteGroup.rotation.y) * 0.1;
+        cassetteGroup.rotation.x += (rotX - cassetteGroup.rotation.x) * 0.1;
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        if (!container) return;
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+
+      // Initial Boot Render
+      renderPufMatrix();
+      renderNodes();
+      syncHeaderAndLedger();
+      pushLog('SYSTEM_BOOT // M0', 'AEGIS-CASSETTE M0 韌體狀態機初始化完成，Coat-ID 驗證通過。', 'success');
+    });
+  </script>
+</body>
+</html>
